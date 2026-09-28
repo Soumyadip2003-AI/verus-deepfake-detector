@@ -2,22 +2,54 @@ import io
 import json
 import unittest
 from pathlib import Path
-from unittest.mock import patch
 from tempfile import TemporaryDirectory
+from unittest.mock import patch
 
+import numpy as np
 from fastapi.testclient import TestClient
 from PIL import Image
 
 import backend.app as backend
 
 
+class VideoFrameTests(unittest.TestCase):
+    def test_video_frames_are_decoded_sequentially_and_bounded(self):
+        class Capture:
+            def __init__(self):
+                self.index = 0
+
+            def get(self, _):
+                return 1000
+
+            def read(self):
+                frame = np.full((1, 1, 3), self.index, dtype=np.uint8)
+                self.index += 1
+                return True, frame
+
+        capture = Capture()
+        frames = backend.read_video_frames(capture)
+        self.assertEqual(capture.index, backend.MAX_VIDEO_SCAN_FRAMES)
+        self.assertEqual([int(frame[0, 0, 0]) for frame in frames],
+                         np.linspace(0, 239, backend.MAX_FRAMES, dtype=int).tolist())
+
+
 class ApiTests(unittest.TestCase):
     def setUp(self):
+        self.temp = TemporaryDirectory()
+        self.threshold_patch = patch.object(backend, 'THRESHOLDS_FILE', Path(self.temp.name) / 'missing.json')
+        self.production_patch = patch.object(backend, 'PRODUCTION', False)
+        self.threshold_patch.start()
+        self.production_patch.start()
+        backend.thresholds.cache_clear()
         self.client = TestClient(backend.app)
         self.original_detector = backend._detector
 
     def tearDown(self):
         backend._detector = self.original_detector
+        backend.thresholds.cache_clear()
+        self.production_patch.stop()
+        self.threshold_patch.stop()
+        self.temp.cleanup()
 
     def test_rejects_unsupported_file(self):
         response = self.client.post('/api/analyze', files={'file': ('note.txt', b'hello', 'text/plain')})

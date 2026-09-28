@@ -1,6 +1,5 @@
 """Download a reproducible, paired HiDF video sample using ZIP range requests.
 
-The sample is for exploratory test reporting, not threshold calibration.
 Dataset: https://zenodo.org/records/16140829 (CC BY-NC 4.0).
 """
 
@@ -21,6 +20,7 @@ import urllib.error
 import urllib.request
 import zlib
 from collections import Counter
+from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from pathlib import Path
@@ -72,6 +72,10 @@ def get(url: str, start: int | None = None, stop: int | None = None) -> bytes:
             except ValueError:
                 delay = 2**attempt
             time.sleep(min(60, max(1, delay)))
+        except ValueError:
+            if attempt >= 2:
+                raise
+            time.sleep(attempt + 1)
         except urllib.error.URLError as exc:
             if isinstance(exc.reason, ssl.SSLCertVerificationError) or attempt == 9:
                 raise
@@ -137,6 +141,54 @@ def media_members(indexed: dict[str, Member], kind: str) -> dict[str, Member]:
     return matches
 
 
+def target_id(member: Member) -> str:
+    return member.name.rsplit("/", 1)[-1].split("_", 1)[1][:-4]
+
+
+def assign_splits(selected: list[str], fake: dict[str, Member], calibration_pairs: int,
+                  rng: random.Random) -> tuple[dict[str, str], dict[str, str]]:
+    """Keep every base and target identity in one exact-size split."""
+    parent: dict[str, str] = {}
+
+    def find(item: str) -> str:
+        parent.setdefault(item, item)
+        while parent[item] != item:
+            parent[item] = parent[parent[item]]
+            item = parent[item]
+        return item
+
+    def union(left: str, right: str) -> None:
+        left, right = find(left), find(right)
+        if left != right:
+            parent[max(left, right)] = min(left, right)
+
+    for base in selected:
+        union(base, target_id(fake[base]))
+    components: dict[str, list[str]] = defaultdict(list)
+    for base in selected:
+        components[find(base)].append(base)
+    groups = list(components.values())
+    rng.shuffle(groups)
+
+    # Select whole identity components while hitting the requested pair count exactly.
+    choices: dict[int, tuple[int, ...]] = {0: ()}
+    for index, component in enumerate(groups):
+        for total, picked in list(choices.items())[::-1]:
+            candidate = total + len(component)
+            if candidate <= calibration_pairs and candidate not in choices:
+                choices[candidate] = (*picked, index)
+    if calibration_pairs not in choices:
+        raise ValueError("Cannot create the requested calibration size without identity overlap")
+    calibration = set(choices[calibration_pairs])
+    splits, group_ids = {}, {}
+    for index, component in enumerate(groups):
+        split = "calibration" if index in calibration else "test"
+        group_id = f"identity_{min(find(base) for base in component)}"
+        for base in component:
+            splits[base], group_ids[base] = split, group_id
+    return splits, group_ids
+
+
 def extract(archive: str, member: Member, root: Path) -> None:
     # Output names came from the strict archive-path pattern in media_members.
     destination = root / member.name
@@ -169,13 +221,14 @@ def extract(archive: str, member: Member, root: Path) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--pairs", type=int, default=500)
+    parser.add_argument("--calibration-pairs", type=int, default=0)
     parser.add_argument("--seed", type=int, default=20260928)
     parser.add_argument("--workers", type=int, default=6)
     parser.add_argument("--out", type=Path, default=Path("datasets/HiDF"))
     parser.add_argument("--plan", action="store_true", help="inspect selection without downloading videos")
     args = parser.parse_args()
-    if args.pairs < 1 or args.workers < 1:
-        parser.error("pairs and workers must be positive")
+    if args.pairs < 1 or args.workers < 1 or not 0 <= args.calibration_pairs < args.pairs:
+        parser.error("pairs/workers must be positive and calibration-pairs must be between 0 and pairs-1")
     fake = media_members(zip_index("Fake-vid.zip"), "Fake-vid")
     real = media_members(zip_index("Real-vid.zip"), "Real-vid")
     facts = metadata()
@@ -189,11 +242,15 @@ def main() -> None:
     c_count = args.pairs - f_count
     selected = rng.sample(sources["c"], c_count) + rng.sample(sources["f"], f_count)
     rng.shuffle(selected)
-    targets = [fake[base].name.rsplit("/", 1)[-1].split("_", 1)[1][:-4] for base in selected]
+    targets = [target_id(fake[base]) for base in selected]
     reused_targets = sum(count - 1 for count in Counter(targets).values())
+    splits, group_ids = assign_splits(selected, fake, args.calibration_pairs, rng)
+    group_counts = Counter((splits[base], group_ids[base]) for base in selected)
     size = sum(real[base].compressed_size + fake[base].compressed_size for base in selected)
     print(f"HiDF paired sample: {len(selected)} sources, {len(sources['c'])} c and {len(sources['f'])} f in release")
     print(f"Selected c={c_count}, f={f_count}; repeated target IDs={reused_targets}; download={size / 1e6:.1f} MB")
+    print(f"Calibration pairs={args.calibration_pairs}; test pairs={args.pairs - args.calibration_pairs}; "
+          f"identity groups={len(group_counts)}")
     if args.plan:
         return
     jobs = [("Real-vid.zip", real[base]) for base in selected] + [("Fake-vid.zip", fake[base]) for base in selected]
@@ -209,13 +266,20 @@ def main() -> None:
         writer.writeheader()
         for base in selected:
             for label, member in (("real", real[base]), ("fake", fake[base])):
-                writer.writerow({"path": member.name, "label": label, "split": "test", "group": base,
+                writer.writerow({"path": member.name, "label": label, "split": splits[base],
+                                 "group": group_ids[base],
                                  "slice": f"source_{base[0]}", "method": "face_swap" if label == "fake" else ""})
     provenance = {"source": "https://zenodo.org/records/16140829", "seed": args.seed, "pairs": len(selected),
+                  "calibration_pairs": args.calibration_pairs,
                   "selected_source_counts": {"c": c_count, "f": f_count}, "reused_target_ids": reused_targets,
                   "verified_metadata_md5": METADATA_MD5,
                   "published_archive_md5": {name: md5 for name, (_, md5) in ARCHIVES.items()},
-                  "purpose": "exploratory test summary; no threshold calibration"}
+                  "identity_groups": {
+                      split: sum(group_split == split for group_split, _ in group_counts)
+                      for split in ("calibration", "test")
+                  },
+                  "purpose": "calibration and held-out validation" if args.calibration_pairs
+                  else "exploratory test summary; no threshold calibration"}
     (args.out / "selection.json").write_text(json.dumps(provenance, indent=2) + "\n")
     print(f"Wrote {manifest}")
 

@@ -23,21 +23,21 @@ The downloaded checkpoint's SHA-256 is `d76f0bdfd74a29fe1b1c1b84a80ac92486993e42
 
 ## Validate and calibrate
 
-The local demo uses unvalidated 0.3/0.7 score cutoffs. Production mode (`VERITY_PRODUCTION=1`) refuses analysis until `backend/models/thresholds.json` is created by the validation command below. The health endpoint loads the detector and, in production, checks the threshold file against the model, face detector, preprocessing files, and inference code used during validation.
+The repository includes thresholds validated on the HiDF workflow below. Production mode (`VERITY_PRODUCTION=1`) refuses analysis if `backend/models/thresholds.json` is missing or does not match the model, face detector, preprocessing files, and inference code used during validation. The health endpoint loads the complete detector before reporting ready.
 
-### Exploratory HiDF video evaluation
+### HiDF calibration and held-out validation
 
-The public [HiDF video dataset](https://zenodo.org/records/16140829) is available for noncommercial research under [CC BY-NC 4.0](https://github.com/DSAIL-SKKU/HiDF#request-for-hidf). Its real and manipulated videos are paired by source ID. Download a reproducible 500-pair sample from the official archives, then score and summarize it:
+The public [HiDF video dataset](https://zenodo.org/records/16140829) is available for noncommercial research under [CC BY-NC 4.0](https://github.com/DSAIL-SKKU/HiDF#request-for-hidf). Its real and manipulated videos are paired by source ID. Download a reproducible 500-pair sample, assign 250 pairs to calibration and 250 pairs to held-out testing, then validate:
 
 ```sh
-.venv/bin/python -m scripts.hidf_sample --pairs 500 --out datasets/HiDF
+.venv/bin/python -m scripts.hidf_sample --pairs 500 --calibration-pairs 250 --out datasets/HiDF
 .venv/bin/python -m scripts.validate score datasets/HiDF/manifest.csv evaluation/hidf_scores.csv --root datasets/HiDF
-.venv/bin/python -m scripts.validate summarize evaluation/hidf_scores.csv evaluation/hidf_report.json
+.venv/bin/python -m scripts.validate calibrate evaluation/hidf_scores.csv evaluation/hidf_report.json backend/models/thresholds.json
 ```
 
-The sampler verifies ZIP checksums for every downloaded video and writes its seed and selection details to `datasets/HiDF/selection.json`. The summary reports detectable-face AUROC and exploratory end-to-end results at the unvalidated demo thresholds. It does not create production thresholds or establish accuracy on all deepfake methods, images, or public uploads. Both the media and per-file scores remain outside version control.
+The sampler verifies the ZIP CRC for every downloaded video, records its seed and selection in `datasets/HiDF/selection.json`, and keeps connected base and target identities in one split. Both splits contain 250 real and 250 fake videos and exceed the validation requirement of 100 distinct identity groups per class. The media, per-file scores, and detailed report remain outside version control.
 
-The reproducible audit run on 2026-09-28 used seed `20260928` and 500 paired sources (1,000 videos). Every video contained a detectable face. Detectable-face AUROC was **0.9449**. At the demo's unvalidated 0.3/0.7 cutoffs, **683/1,000** results were correct, **257/1,000** were inconclusive, and **60/1,000** were wrong. Among the 743 conclusive results, accuracy was **91.9%**. These figures describe this HiDF sample only and are not production calibration.
+The reproducible validation completed on 2026-09-29 using seed `20260928` and the Linux production image. It selected thresholds of **0.4182** and **0.8962**. On the 500 held-out videos, **313** results were correct, **178** were inconclusive, and **9** were wrong. Accuracy among the 322 conclusive results was **97.2%**. All videos contained a detectable face; the one-sided 95% source-group error bounds were **4.13%** for missed fakes and **3.59%** for false alarms. These thresholds validate this pipeline for HiDF-style face-swap videos in a noncommercial research deployment. They do not establish performance on images, audio, fully generated faces, unseen manipulation methods, or arbitrary public uploads.
 
 ### FaceForensics++
 
@@ -73,14 +73,14 @@ real/source_001.mp4,real,calibration,source_001,mp4-compressed,original
 fake/source_001_swap.mp4,fake,calibration,source_001,mp4-compressed,face-swap
 ```
 
-The scoring command uses CPU inference to match the supplied Docker image; run production inference on CPU with these thresholds. Inspect `evaluation/faceforensics_report.json` before deployment. A failed scoring or calibration run removes stale output at the requested path. A failed calibration exits nonzero and removes any previous thresholds there. Both the datasets and generated reports are excluded from version control. Restart the server after changing thresholds.
+The scoring command uses CPU inference. Run it on the Linux deployment host or inside the supplied image because operating-system video decoders can select slightly different pixels. Run production inference on CPU with these thresholds. Inspect `evaluation/faceforensics_report.json` before deployment. A failed scoring or calibration run removes stale output at the requested path. A failed calibration exits nonzero and removes any previous thresholds there. Both the datasets and generated reports are excluded from version control. Restart the server after changing thresholds.
 
 ## Deploy on a Docker VPS
 
 The included `Dockerfile`, `compose.yaml`, and `Caddyfile` set up one CPU inference worker behind Caddy with HTTPS, an upload body limit, health checks, and a read-only app filesystem. Use an AMD64 Linux VPS with at least 8 GB RAM and 20 GB free disk space, plus a domain pointing to it. Open ports 80 and 443. Keep port 8000 private; Compose does not publish it.
 
 1. Install Docker Engine and the Compose plugin on the VPS, and copy this project to it. Obtain the GenD checkpoint using the command above and verify its SHA-256 with `sha256sum backend/models/gend-clip-l14.safetensors`.
-2. Run the validation workflow with representative labeled media, then copy the resulting `backend/models/thresholds.json` to the VPS beside the checkpoint. The threshold file is bound to the exact model, face detector, preprocessing files, and inference code used during validation.
+2. The included `backend/models/thresholds.json` supports the validated noncommercial HiDF research deployment. For another use case, run the validation workflow with representative labeled media and replace that file. It is bound to the exact model, face detector, preprocessing files, and inference code used during validation.
 3. Set `VERITY_DOMAIN` to your DNS hostname and start the stack:
 
    ```sh
@@ -95,9 +95,9 @@ The health response must include `"ready":true` and `"calibrated":true`. Check `
 
 [GenD CLIP ViT-L/14](https://github.com/yermandy/GenD) is a pretrained face manipulation detector from [WACV 2026 research](https://openaccess.thecvf.com/content/WACV2026/papers/Yermakov_Deepfake_Detection_that_Generalizes_Across_Benchmarks_WACV_2026_paper.pdf), evaluated across 14 benchmarks. Its [released weights](https://huggingface.co/yermandy/GenD_CLIP_L_14) and code are MIT licensed. [OpenCV YuNet](https://github.com/opencv/opencv_zoo/tree/main/models/face_detection_yunet) supplies face landmarks for alignment; its bundled model is MIT licensed (see `backend/models/LICENSE-YUNET`).
 
-There is no universal best detector for every new deepfake technique. GenD was trained on face crops for face manipulations and can miss entirely AI-generated faces. This implementation uses YuNet rather than the paper's RetinaFace preprocessing, so its scores may differ from published results. The local demo uses 0.3 and 0.7 as display thresholds; they have not been calibrated on this project's data. A score is not a probability that the media is authentic. A low fake score does not prove a file is real.
+There is no universal best detector for every new deepfake technique. GenD was trained on face crops for face manipulations and can miss entirely AI-generated faces. This implementation uses YuNet rather than the paper's RetinaFace preprocessing, so its scores may differ from published results. The included thresholds are calibrated only for the documented HiDF video workflow. A score is not a probability that the media is authentic. A low fake score does not prove a file is real.
 
-Video analysis averages frame scores; it does **not** inspect audio or run a temporal neural network. Only the largest face in each sampled frame is checked. Media with no detectable face returns `inconclusive`. Validate on your own real, manipulated, compressed, and demographic test sets before relying on a result in a consequential setting.
+Video analysis sequentially decodes at most the first 240 frames and averages scores from up to eight evenly spaced frames. It does **not** inspect audio or run a temporal neural network. Only the largest face in each sampled frame is checked. Media with no detectable face returns `inconclusive`. Validate on your own real, manipulated, compressed, and demographic test sets before relying on a result in a consequential setting.
 
 ## Check
 

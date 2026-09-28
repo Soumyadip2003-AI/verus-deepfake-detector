@@ -1,0 +1,55 @@
+{
+  "version": 3,
+  "real_max": 0.4181727385148406,
+  "fake_min": 0.8962171897292137,
+  "model_sha256": "d76f0bdfd74a29fe1b1c1b84a80ac92486993e426878e8c7a3944281fbb96833",
+  "face_model_sha256": "8f2383e4dd3cfbb4553ea8718107fc0423210dc964f9f4280604804ed2552fa4",
+  "pipeline_sha256": "568a0bf2a60ccecb8786cab439e8f9a82148dd351c522efc6bc33dfe347d982a",
+  "clip_config_sha256": "8a09b467700c58138c29d53c605b34ebc69beaadd13274a8a2af8ad2c2f4032a",
+  "clip_preprocessor_sha256": "910e70b3956ac9879ebc90b22fb3bc8a75b6a0677814500101a4c072bd7857bd",
+  "validated_at": "2026-09-28T19:31:40.050373+00:00",
+  "target_error_upper_95": 0.05,
+  "minimum_coverage": 0.2,
+  "calibration": {
+    "media": 500,
+    "labels": {
+      "real": 250,
+      "fake": 250
+    },
+    "no_face": 0,
+    "detectable_real": 250,
+    "detectable_fake": 250,
+    "source_groups_real": 246,
+    "source_groups_fake": 246,
+    "false_real": 6,
+    "false_fake": 6,
+    "false_real_source_groups": 6,
+    "false_fake_source_groups": 6,
+    "false_real_upper_95": 0.04646721477282042,
+    "false_fake_upper_95": 0.04646721477282042,
+    "real_coverage": 0.668,
+    "fake_coverage": 0.552,
+    "inconclusive": 183
+  },
+  "test": {
+    "media": 500,
+    "labels": {
+      "real": 250,
+      "fake": 250
+    },
+    "no_face": 0,
+    "detectable_real": 250,
+    "detectable_fake": 250,
+    "source_groups_real": 245,
+    "source_groups_fake": 245,
+    "false_real": 5,
+    "false_fake": 4,
+    "false_real_source_groups": 5,
+    "false_fake_source_groups": 4,
+    "false_real_upper_95": 0.04132684223541538,
+    "false_fake_upper_95": 0.03587089573916588,
+    "real_coverage": 0.68,
+    "fake_coverage": 0.572,
+    "inconclusive": 178
+  }
+}

@@ -29,10 +29,11 @@ MODELS = ROOT / "backend" / "models"
 CHECKPOINT = MODELS / "gend-clip-l14.safetensors"
 FACE_MODEL = MODELS / "face_detection_yunet_2023mar.onnx"
 THRESHOLDS_FILE = Path(os.environ.get("VERITY_THRESHOLDS_FILE", str(MODELS / "thresholds.json")))
-THRESHOLD_VERSION = 2
+THRESHOLD_VERSION = 3
 PRODUCTION = os.environ.get("VERITY_PRODUCTION") == "1"
 MAX_UPLOAD = 100 * 1024 * 1024
 MAX_FRAMES = 8
+MAX_VIDEO_SCAN_FRAMES = 240
 MIME_TYPES = {
     "image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp",
     "video/mp4": ".mp4", "video/webm": ".webm", "video/quicktime": ".mov",
@@ -84,6 +85,23 @@ def classify(score: float | None, real_max: float, fake_min: float) -> str:
     return "inconclusive"
 
 
+def read_video_frames(capture: cv2.VideoCapture) -> list[np.ndarray]:
+    """Decode sequentially so codecs select the same frames on every platform."""
+    total = int(capture.get(cv2.CAP_PROP_FRAME_COUNT))
+    limit = min(total, MAX_VIDEO_SCAN_FRAMES) if total > 0 else MAX_VIDEO_SCAN_FRAMES
+    wanted = set(np.linspace(0, limit - 1, min(MAX_FRAMES, limit), dtype=int))
+    frames = []
+    for index in range(limit):
+        ok, frame = capture.read()
+        if not ok:
+            break
+        if index in wanted:
+            if frame.shape[0] * frame.shape[1] > 20_000_000:
+                raise ValueError("Video resolution exceeds 20 megapixels.")
+            frames.append(frame)
+    return frames
+
+
 class GenDCLIP(nn.Module):
     """The released GenD CLIP module layout, loaded from its safetensors file."""
 
@@ -122,7 +140,7 @@ class Detector:
         )
         self.face_detector = cv2.FaceDetectorYN.create(str(FACE_MODEL), "", (320, 320), 0.6, 0.3, 5000)
 
-    def score_frame(self, frame: np.ndarray) -> tuple[float | None, int]:
+    def prepare_frame(self, frame: np.ndarray) -> tuple[Image.Image | None, int]:
         height, width = frame.shape[:2]
         scale = min(1.0, 960 / max(width, height))
         resized = cv2.resize(frame, (round(width * scale), round(height * scale))) if scale < 1 else frame
@@ -147,11 +165,20 @@ class Detector:
         if transform is None:
             return None, len(faces)
         aligned = cv2.warpAffine(frame, transform, (256, 256))
-        image = Image.fromarray(cv2.cvtColor(aligned, cv2.COLOR_BGR2RGB))
-        pixels = self.processor(images=image, return_tensors="pt")["pixel_values"].to(self.device)
+        return Image.fromarray(cv2.cvtColor(aligned, cv2.COLOR_BGR2RGB)), len(faces)
+
+    def score_frames(self, frames: list[np.ndarray]) -> list[tuple[float | None, int]]:
+        prepared = [self.prepare_frame(frame) for frame in frames]
+        images = [image for image, _ in prepared if image is not None]
+        if not images:
+            return [(None, count) for _, count in prepared]
+        pixels = self.processor(images=images, return_tensors="pt")["pixel_values"].to(self.device)
         with torch.inference_mode():
-            fake_score = self.model(pixels).softmax(dim=-1)[0, 1].item()
-        return fake_score, len(faces)
+            scores = iter(self.model(pixels).softmax(dim=-1)[:, 1].tolist())
+        return [(next(scores) if image is not None else None, count) for image, count in prepared]
+
+    def score_frame(self, frame: np.ndarray) -> tuple[float | None, int]:
+        return self.score_frames([frame])[0]
 
     def analyze(self, path: Path, is_video: bool) -> dict:
         if is_video:
@@ -163,29 +190,8 @@ class Detector:
             if width * height > 20_000_000:
                 capture.release()
                 raise ValueError("Video resolution exceeds 20 megapixels.")
-            total = int(capture.get(cv2.CAP_PROP_FRAME_COUNT))
-            positions = np.linspace(0, total - 1, min(MAX_FRAMES, total), dtype=int) if total > 0 else None
-            frames = []
             try:
-                if positions is None:
-                    for index in range(240):
-                        ok, frame = capture.read()
-                        if not ok:
-                            break
-                        if frame.shape[0] * frame.shape[1] > 20_000_000:
-                            raise ValueError("Video resolution exceeds 20 megapixels.")
-                        if index % 30 == 0:
-                            frames.append(frame)
-                        if len(frames) == MAX_FRAMES:
-                            break
-                else:
-                    for position in positions:
-                        capture.set(cv2.CAP_PROP_POS_FRAMES, int(position))
-                        ok, frame = capture.read()
-                        if ok:
-                            if frame.shape[0] * frame.shape[1] > 20_000_000:
-                                raise ValueError("Video resolution exceeds 20 megapixels.")
-                            frames.append(frame)
+                frames = read_video_frames(capture)
             finally:
                 capture.release()
             if not frames:
@@ -200,13 +206,9 @@ class Detector:
             except (UnidentifiedImageError, OSError, Image.DecompressionBombError) as exc:
                 raise ValueError("This image could not be decoded.") from exc
 
-        scores = []
-        multiple_faces = False
-        for frame in frames:
-            score, face_count = self.score_frame(frame)
-            multiple_faces |= face_count > 1
-            if score is not None:
-                scores.append(score)
+        frame_results = self.score_frames(frames)
+        scores = [score for score, _ in frame_results if score is not None]
+        multiple_faces = any(face_count > 1 for _, face_count in frame_results)
         fake_score = float(np.mean(scores)) if scores else None
         return {
             "fake_score": fake_score,
@@ -261,13 +263,13 @@ def health():
 @app.post("/api/analyze")
 def analyze(file: UploadFile = File(...)):
     global _detector
+    suffix = MIME_TYPES.get(file.content_type or "")
+    if suffix is None:
+        raise HTTPException(415, "Use a JPG, PNG, WebP, MP4, WebM, or MOV file.")
     try:
         real_max, fake_min, calibrated = thresholds()
     except (ValueError, KeyError, OSError, json.JSONDecodeError) as exc:
         raise HTTPException(503, str(exc)) from exc
-    suffix = MIME_TYPES.get(file.content_type or "")
-    if suffix is None:
-        raise HTTPException(415, "Use a JPG, PNG, WebP, MP4, WebM, or MOV file.")
     path = None
     try:
         with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as target:
