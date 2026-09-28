@@ -7,3 +7,5 @@ __pycache__/
 backend/models/gend-clip-l14.safetensors
 datasets/
 evaluation/
+.vercel
+.env*

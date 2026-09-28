@@ -1,0 +1,10 @@
+.git
+.venv
+.agents
+.codex
+.env*
+datasets
+evaluation
+scripts
+tests
+backend/models/gend-clip-l14.safetensors
