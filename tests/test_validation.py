@@ -41,6 +41,39 @@ class ValidationTests(unittest.TestCase):
         self.assertEqual(stats['inconclusive'], 2)
         self.assertEqual(stats['no_face'], 1)
 
+    def test_held_out_summary_counts_abstentions_and_auc_ties(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            model, face, scores, report = (root / name for name in ('model', 'face', 'scores.csv', 'report.json'))
+            model.write_bytes(b'model')
+            face.write_bytes(b'face')
+            hashes = {'model_sha256': sha256(model), 'face_model_sha256': sha256(face),
+                      **validate.pipeline_hashes()}
+            with scores.open('w', newline='') as target:
+                writer = csv.DictWriter(target, fieldnames=validate.FIELDS)
+                writer.writeheader()
+                for label, score in [('real', .2), ('real', .5), ('real', .8), ('real', None),
+                                     ('fake', .1), ('fake', .5), ('fake', .8)]:
+                    writer.writerow({'path': f'{label}-{score}.png', 'label': label, 'split': 'test',
+                                     'group': f'{label}-{score}', 'fake_score': '' if score is None else score,
+                                     'frames_with_faces': int(score is not None), **hashes})
+            with patch.object(validate, 'CHECKPOINT', model), patch.object(validate, 'FACE_MODEL', face), \
+                 redirect_stdout(io.StringIO()):
+                result = validate.summarize(scores, report)
+            self.assertEqual(json.loads(report.read_text()), result)
+            self.assertEqual(result['media'], 7)
+            self.assertEqual(result['labels'], {'real': 4, 'fake': 3})
+            self.assertEqual(result['no_face_rate'], 1 / 7)
+            self.assertEqual(result['auroc_detectable'], 4 / 9)
+            self.assertEqual((result['correct_real'], result['correct_fake']), (1, 1))
+            self.assertEqual(result['accuracy_end_to_end'], 2 / 7)
+            self.assertEqual(result['accuracy_when_conclusive'], 1 / 2)
+            self.assertEqual(result['balanced_accuracy_end_to_end'], (1 / 4 + 1 / 3) / 2)
+            self.assertEqual((result['false_real'], result['false_fake']), (1, 1))
+            self.assertEqual((result['inconclusive'], result['conclusive_coverage']), (3, 4 / 7))
+            with self.assertRaisesRegex(ValueError, 'paths must differ'):
+                validate.summarize(scores, scores)
+
     def test_calibration_uses_separate_source_groups_and_held_out_test(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

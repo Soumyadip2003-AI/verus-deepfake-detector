@@ -157,6 +157,63 @@ def metrics(rows: list[dict], real_max: float, fake_min: float) -> dict:
     }
 
 
+def auroc(rows: list[dict]) -> float | None:
+    """Area under the ROC curve among media with detectable faces, counting ties as half."""
+    ranked = sorted((r["score"], r["label"]) for r in rows if r["score"] is not None)
+    positives = sum(label == "fake" for _, label in ranked)
+    negatives = len(ranked) - positives
+    if not positives or not negatives:
+        return None
+    rank_sum = 0.0
+    start = 0
+    while start < len(ranked):
+        end = start + 1
+        while end < len(ranked) and ranked[end][0] == ranked[start][0]:
+            end += 1
+        rank_sum += sum(label == "fake" for _, label in ranked[start:end]) * (start + 1 + end) / 2
+        start = end
+    return (rank_sum - positives * (positives + 1) / 2) / (positives * negatives)
+
+
+def summarize(scores: Path, report_path: Path | None = None) -> dict:
+    if report_path is not None:
+        if scores.resolve() == report_path.resolve():
+            raise ValueError("Scores and report paths must differ.")
+        report_path.unlink(missing_ok=True)
+    rows = scored_rows(scores)
+    if any(row["split"] != "test" for row in rows):
+        raise ValueError("Exploratory summary requires held-out test rows only.")
+    stats = metrics(rows, .3, .7)
+    labels = stats["labels"]
+    correct_real = sum(r["label"] == "real" and classify(r["score"], .3, .7) == "no_strong_signal"
+                       for r in rows)
+    correct_fake = sum(r["label"] == "fake" and classify(r["score"], .3, .7) == "likely_manipulated"
+                       for r in rows)
+    correct = correct_real + correct_fake
+    conclusive = stats["media"] - stats["inconclusive"]
+    report = {
+        "media": stats["media"], "labels": {label: labels.get(label, 0) for label in ("real", "fake")},
+        "detectable_real": stats["detectable_real"], "detectable_fake": stats["detectable_fake"],
+        "no_face": stats["no_face"], "no_face_rate": stats["no_face"] / stats["media"],
+        "auroc_detectable": auroc(rows),
+        "demo_thresholds_exploratory": {"real_max": .3, "fake_min": .7},
+        "correct_real": correct_real, "correct_fake": correct_fake,
+        "accuracy_end_to_end": correct / stats["media"],
+        "accuracy_when_conclusive": correct / conclusive if conclusive else None,
+        "balanced_accuracy_end_to_end": (stats["real_coverage"] + stats["fake_coverage"]) / 2
+        if labels.get("real") and labels.get("fake") else None,
+        "false_real": stats["false_real"], "false_fake": stats["false_fake"],
+        "inconclusive": stats["inconclusive"],
+        "conclusive_coverage": 1 - stats["inconclusive"] / stats["media"],
+    }
+    result = json.dumps(report, indent=2) + "\n"
+    if report_path is not None:
+        report_path.parent.mkdir(parents=True, exist_ok=True)
+        report_path.write_text(result)
+    print(result, end="")
+    return report
+
+
 def calibrate(scores: Path, report_path: Path, thresholds_path: Path) -> bool:
     if len({path.resolve() for path in (scores, report_path, thresholds_path)}) != 3:
         raise ValueError("Scores, report, and thresholds paths must differ.")
@@ -250,9 +307,14 @@ def main() -> None:
     calibrator.add_argument("scores", type=Path)
     calibrator.add_argument("report", type=Path)
     calibrator.add_argument("thresholds", type=Path)
+    summarizer = commands.add_parser("summarize", help="Report exploratory metrics for held-out test scores")
+    summarizer.add_argument("scores", type=Path)
+    summarizer.add_argument("report", type=Path, nargs="?")
     args = parser.parse_args()
     if args.command == "score":
         score_media(args.manifest, args.root, args.output)
+    elif args.command == "summarize":
+        summarize(args.scores, args.report)
     elif not calibrate(args.scores, args.report, args.thresholds):
         raise SystemExit(1)
 

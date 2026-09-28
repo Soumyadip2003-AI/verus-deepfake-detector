@@ -25,6 +25,20 @@ The downloaded checkpoint's SHA-256 is `d76f0bdfd74a29fe1b1c1b84a80ac92486993e42
 
 The local demo uses unvalidated 0.3/0.7 score cutoffs. Production mode (`VERITY_PRODUCTION=1`) refuses analysis until `backend/models/thresholds.json` is created by the validation command below. The health endpoint loads the detector and, in production, checks the threshold file against the model, face detector, preprocessing files, and inference code used during validation.
 
+### Exploratory HiDF video evaluation
+
+The public [HiDF video dataset](https://zenodo.org/records/16140829) is available for noncommercial research under [CC BY-NC 4.0](https://github.com/DSAIL-SKKU/HiDF#request-for-hidf). Its real and manipulated videos are paired by source ID. Download a reproducible 500-pair sample from the official archives, then score and summarize it:
+
+```sh
+.venv/bin/python -m scripts.hidf_sample --pairs 500 --out datasets/HiDF
+.venv/bin/python -m scripts.validate score datasets/HiDF/manifest.csv evaluation/hidf_scores.csv --root datasets/HiDF
+.venv/bin/python -m scripts.validate summarize evaluation/hidf_scores.csv evaluation/hidf_report.json
+```
+
+The sampler verifies ZIP checksums for every downloaded video and writes its seed and selection details to `datasets/HiDF/selection.json`. The summary reports detectable-face AUROC and exploratory end-to-end results at the unvalidated demo thresholds. It does not create production thresholds or establish accuracy on all deepfake methods, images, or public uploads. Both the media and per-file scores remain outside version control.
+
+The reproducible audit run on 2026-09-28 used seed `20260928` and 500 paired sources (1,000 videos). Every video contained a detectable face. Detectable-face AUROC was **0.9449**. At the demo's unvalidated 0.3/0.7 cutoffs, **683/1,000** results were correct, **257/1,000** were inconclusive, and **60/1,000** were wrong. Among the 743 conclusive results, accuracy was **91.9%**. These figures describe this HiDF sample only and are not production calibration.
+
 ### FaceForensics++
 
 The project is prepared for [FaceForensics++](https://github.com/ondyari/FaceForensics/blob/master/dataset/README.md). Its videos require [maintainer approval through this form](https://docs.google.com/forms/d/e/1FAIpQLSdRRR3L5zAv6tQ_CKxmK4W96tAab_pfBu2EKAgQbeDVhmXagg/viewform). The [dataset terms](https://kaldir.vc.in.tum.de/faceforensics_tos.pdf) permit non-commercial research and education. Review and accept them yourself; the download script is sent after approval. For a commercial deployment, obtain a dataset with suitable rights. No FaceForensics++ videos are bundled here.
