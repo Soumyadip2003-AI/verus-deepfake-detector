@@ -141,7 +141,7 @@ function showServiceError(message = 'Detector disconnected.') {
   serviceLink.hidden = !localSite;
 }
 
-async function checkService() {
+async function checkService(attempt = 0) {
   try {
     const response = await fetch('/api/health', { cache: 'no-store' });
     if (!response.ok || !response.headers.get('content-type')?.includes('application/json')) throw new Error('unavailable');
@@ -162,6 +162,12 @@ async function checkService() {
     serviceMessage.textContent = 'Detector connected. Choose a file to see the model estimate.';
     serviceLink.hidden = true;
   } catch {
+    if (attempt < 2) {
+      serviceStatus.dataset.state = 'loading';
+      serviceMessage.textContent = 'Waking the detector…';
+      setTimeout(() => checkService(attempt + 1), 2000);
+      return;
+    }
     showServiceError();
   }
 }

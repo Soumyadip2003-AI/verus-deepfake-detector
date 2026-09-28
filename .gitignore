@@ -9,3 +9,4 @@ datasets/
 evaluation/
 .vercel
 .env*
+.DS_Store
