@@ -1,0 +1,10 @@
+fastapi==0.141.1
+uvicorn==0.54.0
+python-multipart==0.0.32
+pillow==12.3.0
+numpy==2.5.3
+opencv-python-headless==4.14.0.94
+torch==2.8.0
+transformers==4.56.2
+safetensors==0.8.0
+httpx==0.28.1

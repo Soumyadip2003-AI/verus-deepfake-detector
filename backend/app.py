@@ -1,0 +1,303 @@
+"""Local deepfake detection API and frontend server."""
+
+from __future__ import annotations
+
+import json
+import hashlib
+import logging
+import os
+import tempfile
+import threading
+from functools import lru_cache
+from pathlib import Path
+
+import cv2
+import numpy as np
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
+from PIL import Image, ImageOps, UnidentifiedImageError
+from safetensors.torch import load_model
+from transformers import CLIPImageProcessor, CLIPVisionConfig, CLIPVisionModel
+
+ROOT = Path(__file__).resolve().parent.parent
+FRONTEND = ROOT / "frontend"
+MODELS = ROOT / "backend" / "models"
+CHECKPOINT = MODELS / "gend-clip-l14.safetensors"
+FACE_MODEL = MODELS / "face_detection_yunet_2023mar.onnx"
+THRESHOLDS_FILE = Path(os.environ.get("VERITY_THRESHOLDS_FILE", str(MODELS / "thresholds.json")))
+THRESHOLD_VERSION = 2
+PRODUCTION = os.environ.get("VERITY_PRODUCTION") == "1"
+MAX_UPLOAD = 100 * 1024 * 1024
+MAX_FRAMES = 8
+MIME_TYPES = {
+    "image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp",
+    "video/mp4": ".mp4", "video/webm": ".webm", "video/quicktime": ".mov",
+}
+
+
+def sha256(path: Path) -> str:
+    with path.open("rb") as source:
+        return hashlib.file_digest(source, "sha256").hexdigest()
+
+
+def pipeline_hashes() -> dict[str, str]:
+    return {
+        "pipeline_sha256": sha256(Path(__file__)),
+        "clip_config_sha256": sha256(MODELS / "clip-config.json"),
+        "clip_preprocessor_sha256": sha256(MODELS / "clip-preprocessor.json"),
+    }
+
+
+@lru_cache(maxsize=1)
+def thresholds() -> tuple[float, float, bool]:
+    if not THRESHOLDS_FILE.is_file():
+        if PRODUCTION:
+            raise ValueError("Validated thresholds are missing. Run the evaluation workflow in README.md.")
+        return 0.3, 0.7, False
+    config = json.loads(THRESHOLDS_FILE.read_text())
+    if not isinstance(config, dict):
+        raise ValueError("Threshold configuration is invalid.")
+    try:
+        real_max, fake_min = float(config["real_max"]), float(config["fake_min"])
+    except (KeyError, TypeError, ValueError) as exc:
+        raise ValueError("Threshold configuration is invalid.") from exc
+    if config.get("version") != THRESHOLD_VERSION or not 0 <= real_max < fake_min <= 1:
+        raise ValueError("Threshold configuration is invalid.")
+    if config.get("model_sha256") != sha256(CHECKPOINT) or config.get("face_model_sha256") != sha256(FACE_MODEL):
+        raise ValueError("Thresholds were validated with different model files.")
+    if any(config.get(key) != value for key, value in pipeline_hashes().items()):
+        raise ValueError("Thresholds were validated with a different inference pipeline.")
+    return real_max, fake_min, True
+
+
+def classify(score: float | None, real_max: float, fake_min: float) -> str:
+    if score is None:
+        return "inconclusive"
+    if score <= real_max:
+        return "no_strong_signal"
+    if score >= fake_min:
+        return "likely_manipulated"
+    return "inconclusive"
+
+
+class GenDCLIP(nn.Module):
+    """The released GenD CLIP module layout, loaded from its safetensors file."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        config = json.loads((MODELS / "clip-config.json").read_text())
+        vision_config = CLIPVisionConfig(**config["vision_config"])
+        self.feature_extractor = nn.Module()
+        self.feature_extractor.vision_model = CLIPVisionModel(vision_config).vision_model
+        self.feature_extractor.visual_projection = nn.Linear(
+            vision_config.hidden_size, config["projection_dim"], bias=False
+        )
+        self.model = nn.Module()
+        self.model.linear = nn.Linear(vision_config.hidden_size, 2)
+
+    def forward(self, pixels: torch.Tensor) -> torch.Tensor:
+        features = self.feature_extractor.vision_model(pixels).pooler_output
+        return self.model.linear(F.normalize(features, p=2, dim=1))
+
+
+class Detector:
+    def __init__(self) -> None:
+        if not CHECKPOINT.is_file():
+            raise FileNotFoundError("GenD weights are missing. Run the download command in README.md.")
+        selected = os.environ.get("VERITY_DEVICE") or (
+            "mps" if torch.backends.mps.is_available() else "cuda" if torch.cuda.is_available() else "cpu"
+        )
+        if selected not in {"cpu", "mps", "cuda"}:
+            raise ValueError("VERITY_DEVICE must be cpu, mps, or cuda.")
+        self.device = torch.device(selected)
+        self.model = GenDCLIP()
+        load_model(self.model, CHECKPOINT, strict=True)
+        self.model.to(self.device).eval()
+        self.processor = CLIPImageProcessor.from_dict(
+            json.loads((MODELS / "clip-preprocessor.json").read_text())
+        )
+        self.face_detector = cv2.FaceDetectorYN.create(str(FACE_MODEL), "", (320, 320), 0.6, 0.3, 5000)
+
+    def score_frame(self, frame: np.ndarray) -> tuple[float | None, int]:
+        height, width = frame.shape[:2]
+        scale = min(1.0, 960 / max(width, height))
+        resized = cv2.resize(frame, (round(width * scale), round(height * scale))) if scale < 1 else frame
+        self.face_detector.setInputSize((resized.shape[1], resized.shape[0]))
+        _, faces = self.face_detector.detect(resized)
+        if faces is None or len(faces) == 0:
+            return None, 0
+
+        # The most prominent face is analyzed when several people are present.
+        face = max(faces, key=lambda row: row[2] * row[3])
+        points = face[4:14].reshape(5, 2).astype(np.float32) / scale
+        if points[0, 0] > points[1, 0]:
+            points[[0, 1]] = points[[1, 0]]
+        if points[3, 0] > points[4, 0]:
+            points[[3, 4]] = points[[4, 3]]
+        target = np.array(
+            [[0.34, 0.46], [0.66, 0.46], [0.5, 0.64], [0.37, 0.82], [0.63, 0.82]],
+            dtype=np.float32,
+        )
+        target = ((target - 0.5) / 1.3 + 0.5) * 256
+        transform, _ = cv2.estimateAffinePartial2D(points, target, method=cv2.LMEDS)
+        if transform is None:
+            return None, len(faces)
+        aligned = cv2.warpAffine(frame, transform, (256, 256))
+        image = Image.fromarray(cv2.cvtColor(aligned, cv2.COLOR_BGR2RGB))
+        pixels = self.processor(images=image, return_tensors="pt")["pixel_values"].to(self.device)
+        with torch.inference_mode():
+            fake_score = self.model(pixels).softmax(dim=-1)[0, 1].item()
+        return fake_score, len(faces)
+
+    def analyze(self, path: Path, is_video: bool) -> dict:
+        if is_video:
+            capture = cv2.VideoCapture(str(path))
+            if not capture.isOpened():
+                raise ValueError("This video could not be decoded.")
+            width = int(capture.get(cv2.CAP_PROP_FRAME_WIDTH))
+            height = int(capture.get(cv2.CAP_PROP_FRAME_HEIGHT))
+            if width * height > 20_000_000:
+                capture.release()
+                raise ValueError("Video resolution exceeds 20 megapixels.")
+            total = int(capture.get(cv2.CAP_PROP_FRAME_COUNT))
+            positions = np.linspace(0, total - 1, min(MAX_FRAMES, total), dtype=int) if total > 0 else None
+            frames = []
+            try:
+                if positions is None:
+                    for index in range(240):
+                        ok, frame = capture.read()
+                        if not ok:
+                            break
+                        if frame.shape[0] * frame.shape[1] > 20_000_000:
+                            raise ValueError("Video resolution exceeds 20 megapixels.")
+                        if index % 30 == 0:
+                            frames.append(frame)
+                        if len(frames) == MAX_FRAMES:
+                            break
+                else:
+                    for position in positions:
+                        capture.set(cv2.CAP_PROP_POS_FRAMES, int(position))
+                        ok, frame = capture.read()
+                        if ok:
+                            if frame.shape[0] * frame.shape[1] > 20_000_000:
+                                raise ValueError("Video resolution exceeds 20 megapixels.")
+                            frames.append(frame)
+            finally:
+                capture.release()
+            if not frames:
+                raise ValueError("No readable video frames were found.")
+        else:
+            try:
+                with Image.open(path) as source:
+                    if source.width * source.height > 20_000_000:
+                        raise ValueError("Image resolution exceeds 20 megapixels.")
+                    image = ImageOps.exif_transpose(source).convert("RGB")
+                    frames = [cv2.cvtColor(np.asarray(image), cv2.COLOR_RGB2BGR)]
+            except (UnidentifiedImageError, OSError, Image.DecompressionBombError) as exc:
+                raise ValueError("This image could not be decoded.") from exc
+
+        scores = []
+        multiple_faces = False
+        for frame in frames:
+            score, face_count = self.score_frame(frame)
+            multiple_faces |= face_count > 1
+            if score is not None:
+                scores.append(score)
+        fake_score = float(np.mean(scores)) if scores else None
+        return {
+            "fake_score": fake_score,
+            "frames_sampled": len(frames),
+            "frames_with_faces": len(scores),
+            "multiple_faces": multiple_faces,
+            "model": "GenD CLIP ViT-L/14",
+        }
+
+
+app = FastAPI(title="Verity Deepfake Detection API", docs_url="/api/docs", redoc_url=None)
+app.mount("/assets", StaticFiles(directory=FRONTEND / "assets"), name="assets")
+_lock = threading.Lock()  # ponytail: serial inference; use a worker queue if concurrent traffic grows.
+_detector: Detector | None = None
+
+
+@app.get("/")
+def homepage():
+    return FileResponse(FRONTEND / "index.html")
+
+
+@app.get("/{filename}")
+def frontend_file(filename: str):
+    if filename not in {"styles.css", "script.js"}:
+        raise HTTPException(404)
+    return FileResponse(FRONTEND / filename)
+
+
+@app.get("/api/health")
+def health():
+    global _detector
+    model_available = CHECKPOINT.is_file() and FACE_MODEL.is_file()
+    try:
+        _, _, calibrated = thresholds() if model_available else (0.3, 0.7, False)
+        problem = None
+    except (ValueError, KeyError, OSError, json.JSONDecodeError) as exc:
+        calibrated, problem = False, str(exc)
+    ready = model_available and problem is None and (calibrated or not PRODUCTION)
+    if ready and _detector is None:
+        try:
+            with _lock:
+                if _detector is None:
+                    _detector = Detector()
+        except Exception:
+            logging.exception("Detector initialization failed")
+            ready, problem = False, "Detector could not load; check server logs."
+    return {"model_available": model_available, "calibrated": calibrated,
+            "ready": ready,
+            "problem": problem}
+
+
+@app.post("/api/analyze")
+def analyze(file: UploadFile = File(...)):
+    global _detector
+    try:
+        real_max, fake_min, calibrated = thresholds()
+    except (ValueError, KeyError, OSError, json.JSONDecodeError) as exc:
+        raise HTTPException(503, str(exc)) from exc
+    suffix = MIME_TYPES.get(file.content_type or "")
+    if suffix is None:
+        raise HTTPException(415, "Use a JPG, PNG, WebP, MP4, WebM, or MOV file.")
+    path = None
+    try:
+        with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as target:
+            path = Path(target.name)
+            size = 0
+            while chunk := file.file.read(1024 * 1024):
+                size += len(chunk)
+                if size > MAX_UPLOAD:
+                    raise HTTPException(413, "The file must be under 100 MB.")
+                target.write(chunk)
+        if size == 0:
+            raise HTTPException(422, "The file is empty.")
+        with _lock:
+            if _detector is None:
+                try:
+                    _detector = Detector()
+                except FileNotFoundError as exc:
+                    raise HTTPException(503, str(exc)) from exc
+                except Exception as exc:
+                    logging.exception("Detector initialization failed")
+                    raise HTTPException(503, "Detector could not load; check server logs.") from exc
+            try:
+                result = _detector.analyze(path, suffix in {".mp4", ".webm", ".mov"})
+                result["verdict"] = classify(result["fake_score"], real_max, fake_min)
+                result["fake_score"] = round(result["fake_score"], 4) if result["fake_score"] is not None else None
+                result["calibrated"] = calibrated
+                return result
+            except (ValueError, cv2.error) as exc:
+                raise HTTPException(422, str(exc)) from exc
+    finally:
+        file.file.close()
+        if path is not None:
+            path.unlink(missing_ok=True)

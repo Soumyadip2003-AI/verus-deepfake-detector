@@ -1,0 +1,184 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#f8f6f1" />
+    <meta name="description" content="Explore how deepfakes are made, learn how to spot them, and preview the Deepfake Detection project." />
+    <title>Verity — Deepfake Detection & Awareness</title>
+    <link rel="preload" as="image" href="./assets/hero-face.jpg" />
+    <link rel="stylesheet" href="./styles.css" />
+    <script src="./script.js" defer></script>
+  </head>
+  <body>
+    <a class="skip-link" href="#main">Skip to content</a>
+
+    <header class="site-header" id="top">
+      <a class="brand" href="#top" aria-label="Verity, back to top">
+        <span class="brand-name">VERITY<span class="brand-dot">.</span></span>
+        <span class="brand-subtitle">Deepfake detection</span>
+      </a>
+      <nav class="site-nav" aria-label="Main navigation">
+        <a href="#analyzer">Try the detector</a>
+        <a href="#how-it-works">How it works</a>
+        <a href="#learn">Learn</a>
+        <a href="#report">Report</a>
+      </nav>
+      <a class="header-cta" href="#analyzer">Analyze media <span aria-hidden="true">↗</span></a>
+    </header>
+
+    <main id="main">
+      <section class="hero" aria-labelledby="hero-title">
+        <div class="hero-copy">
+          <div class="eyebrow"><span class="eyebrow-line"></span> An awareness initiative on AI-generated media</div>
+          <h1 id="hero-title">Question<br />what you <em>see.</em></h1>
+          <p class="hero-lead">A convincing face is no longer proof. Learn how manipulated media works, what to watch for, and how a detection system can help you look closer.</p>
+
+          <div class="upload" id="analyzer">
+            <div class="upload-topline">
+              <span>Deepfake detector</span>
+              <span class="preview-label">Image + video</span>
+            </div>
+            <p class="service-status" id="service-status" role="status"><span id="service-message">Connecting to detector…</span> <a id="service-link" href="http://127.0.0.1:8000" hidden>Open the working detector ↗</a></p>
+            <div class="drop-zone" id="drop-zone">
+              <input id="media-input" type="file" accept="image/png,image/jpeg,image/webp,video/mp4,video/webm,video/quicktime" aria-label="Choose an image or video" aria-describedby="upload-help" tabindex="-1" />
+              <div class="drop-empty" id="drop-empty">
+                <span class="upload-symbol" aria-hidden="true">↑</span>
+                <strong>Take a closer look at your media.</strong>
+                <p>Choose an image or video, or drop it here.</p>
+                <button class="button button-amber" id="choose-file" type="button">Choose a file <span aria-hidden="true">↗</span></button>
+                <small id="upload-help">JPG, PNG, WebP, MP4, WebM or MOV · up to 100 MB · result appears here</small>
+              </div>
+              <div class="drop-selected" id="drop-selected" hidden>
+                <div class="media-frame" id="media-frame"></div>
+                <div class="file-summary">
+                  <div>
+                    <span class="mini-label">Selected media</span>
+                    <strong id="file-name"></strong>
+                    <span id="file-details"></span>
+                  </div>
+                  <button class="text-button" id="clear-file" type="button">Remove file</button>
+                </div>
+                <div class="analysis-preview" aria-labelledby="analysis-title">
+                  <div class="analysis-heading">
+                    <div>
+                      <span class="mini-label">DETECTION RESULT</span>
+                      <h3 id="analysis-title">Awaiting analysis</h3>
+                    </div>
+                    <span class="analysis-status" id="analysis-status" role="status">Ready to analyze</span>
+                  </div>
+                  <div class="analysis-fields" id="result-panel" data-verdict="pending" aria-live="polite">
+                    <div><span>Classification</span><strong id="result-verdict">Waiting for scan</strong></div>
+                    <div><span>Fake signal</span><strong id="result-score">—</strong></div>
+                  </div>
+                  <button class="button button-amber" id="run-detection" type="button">Run detection</button>
+                  <p class="preview-note" id="result-note">The model looks for face edits and may miss fully AI-generated images. Its score is an estimate, not proof.</p>
+                </div>
+              </div>
+            </div>
+            <p class="upload-error" id="upload-error" role="alert" hidden></p>
+          </div>
+          <p class="privacy-note"><span aria-hidden="true">◆</span> Uploaded files are processed locally by this server and deleted after analysis.</p>
+        </div>
+        <div class="hero-art">
+          <img src="./assets/hero-face.jpg" width="1200" height="900" alt="Portrait with one side dissolving into digital pixels, illustrating a manipulated image" fetchpriority="high" />
+          <div class="art-caption">SAME FACE.<br />DIFFERENT REALITY.</div>
+        </div>
+      </section>
+
+      <section class="statement" aria-label="Our message">
+        <div class="statement-inner">
+          <span class="statement-mark" aria-hidden="true">✳</span>
+          <p>Think before you share.<br /><strong>Verify before you trust.</strong></p>
+          <span class="statement-aside">A more informed internet starts with a moment of doubt.</span>
+        </div>
+      </section>
+
+      <section class="intro section-shell" id="learn" aria-labelledby="intro-title">
+        <div class="section-kicker">THE CONTEXT</div>
+        <div class="intro-grid">
+          <h2 id="intro-title">When seeing is<br /><em>no longer believing.</em></h2>
+          <div class="intro-copy">
+            <p>A deepfake is synthetic video, audio, or imagery made with AI to convincingly replace or imitate a person’s face, voice, or actions.</p>
+            <p>That can be used for harmless creativity, but it can also power misinformation, identity theft, financial scams, harassment, and political manipulation. The most important defense is informed attention.</p>
+          </div>
+        </div>
+      </section>
+
+      <section class="pipeline section-shell" id="how-it-works" aria-labelledby="pipeline-title">
+        <div class="section-kicker">THE PROJECT</div>
+        <div class="section-heading-row">
+          <h2 id="pipeline-title">From upload to <em>insight.</em></h2>
+        </div>
+        <p class="pipeline-subtitle">A CLEARER PATH TO A MORE TRUSTED MEDIA WORLD</p>
+        <ol class="pipeline-list">
+          <li>
+            <div class="step-top"><span>01</span><span class="step-arrow" aria-hidden="true">⟶</span></div>
+            <div class="process-visual visual-video" aria-hidden="true"><img src="./assets/pipeline-portrait.jpg" alt="" loading="lazy" width="640" height="480" /><span class="play-icon">▶</span></div>
+            <h3>Video input</h3><p>Start with an image or uploaded video.</p>
+          </li>
+          <li>
+            <div class="step-top"><span>02</span><span class="step-arrow" aria-hidden="true">⟶</span></div>
+            <div class="process-visual visual-frames" aria-hidden="true"><img src="./assets/pipeline-portrait.jpg" alt="" loading="lazy" width="640" height="480" /><img src="./assets/pipeline-portrait.jpg" alt="" loading="lazy" width="640" height="480" /><img src="./assets/pipeline-portrait.jpg" alt="" loading="lazy" width="640" height="480" /></div>
+            <h3>Frame extraction</h3><p>Sample useful frames from the video.</p>
+          </li>
+          <li>
+            <div class="step-top"><span>03</span><span class="step-arrow" aria-hidden="true">⟶</span></div>
+            <div class="process-visual visual-face" aria-hidden="true"><img src="./assets/pipeline-portrait.jpg" alt="" loading="lazy" width="640" height="480" /><span class="face-target"></span></div>
+            <h3>Face detection</h3><p>Locate, align, and crop faces.</p>
+          </li>
+          <li>
+            <div class="step-top"><span>04</span><span class="step-arrow" aria-hidden="true">⟶</span></div>
+            <div class="process-visual visual-features" aria-hidden="true"><img src="./assets/pipeline-portrait.jpg" alt="" loading="lazy" width="640" height="480" /><span class="feature-grid"></span><span class="feature-lines">≋</span></div>
+            <h3>Feature extraction</h3><p>Find visual patterns and artifacts.</p>
+          </li>
+          <li>
+            <div class="step-top"><span>05</span><span class="step-arrow" aria-hidden="true">⟶</span></div>
+            <div class="process-visual visual-temporal" aria-hidden="true"><div class="temporal-frames"><img src="./assets/pipeline-portrait.jpg" alt="" loading="lazy" width="640" height="480" /><img src="./assets/pipeline-portrait.jpg" alt="" loading="lazy" width="640" height="480" /><img src="./assets/pipeline-portrait.jpg" alt="" loading="lazy" width="640" height="480" /></div><span class="waveform">▁▃▆▂▇▃▅▂▆▃▁▆▃▇▂▅▃▁</span></div>
+            <h3>Frame aggregation</h3><p>Combine scores across sampled moments.</p>
+          </li>
+          <li>
+            <div class="step-top"><span>06</span></div>
+            <div class="process-visual visual-classifier" aria-hidden="true"><div class="classifier-labels"><span>REAL</span><strong>FAKE</strong></div><div class="classifier-track"><span></span></div></div>
+            <h3>Detection estimate</h3><p>Show the model's score and its limits.</p>
+          </li>
+        </ol>
+        <p class="pipeline-note">The detector analyzes faces in images and sampled video frames. It does not inspect audio or use a dedicated temporal model.</p>
+      </section>
+
+      <section class="awareness" aria-labelledby="awareness-title">
+        <div class="awareness-left">
+          <div class="section-kicker">SPOT THE SIGNS</div>
+          <h2 id="awareness-title">Pause.<br />Look closer.<br /><em>Verify.</em></h2>
+          <p class="awareness-lead">One clue alone cannot prove a deepfake. Look for a pattern, then check the source.</p>
+          <ul class="sign-list">
+            <li><span>01</span><div><h3>Movement feels unnatural</h3><p>Watch for odd blinking, stiff expressions, or lip movements that do not match the audio.</p></div></li>
+            <li><span>02</span><div><h3>Details do not hold together</h3><p>Look around the face and hair for blur, distorted edges, and inconsistent lighting or skin tone.</p></div></li>
+            <li><span>03</span><div><h3>The source is uncertain</h3><p>Be cautious with dramatic claims from accounts or sites you cannot verify.</p></div></li>
+          </ul>
+        </div>
+        <div class="awareness-right">
+          <div class="section-kicker section-kicker-light">PROTECT YOURSELF</div>
+          <h2>Verify before<br />you believe.</h2>
+          <p>Before you share, take a minute to check.</p>
+          <ol class="verify-list">
+            <li><span>01</span><div><strong>Check the source</strong><p>Look for an official account or a credible original publication.</p></div></li>
+            <li><span>02</span><div><strong>Cross-check the claim</strong><p>Compare it with trusted reporting or other independent sources.</p></div></li>
+            <li><span>03</span><div><strong>Confirm unusual requests</strong><p>If someone asks for money or personal details, contact them through a separate channel.</p></div></li>
+            <li><span>04</span><div><strong>Limit what you share</strong><p>Use privacy settings and be thoughtful about public photos, videos, and voice clips.</p></div></li>
+          </ol>
+          <div class="report-box" id="report">
+            <div><span class="mini-label">IN INDIA</span><h3>Report cybercrime</h3><p>If you encounter a deepfake scam or become a victim, use the National Cyber Crime Reporting Portal.</p></div>
+            <div class="report-links"><a href="https://cybercrime.gov.in/" target="_blank" rel="noopener noreferrer">cybercrime.gov.in ↗</a><a href="tel:1930">Helpline 1930</a></div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <div><a class="brand-name" href="#top">VERITY<span class="brand-dot">.</span></a><p>Deepfakes: Understanding the Threat<br />An MCA Department awareness initiative</p></div>
+      <div><strong>Institute of Engineering & Management, Kolkata</strong><p>Poster contributors: Soumyadip Sarkar, Sekh Anisha Haque, Soumyadip Dutta, Tirthabrata Mandal, Rashmi Kumari.</p></div>
+      <a href="#top" class="back-top">Back to top ↑</a>
+    </footer>
+  </body>
+</html>

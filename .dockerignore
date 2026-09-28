@@ -1,0 +1,11 @@
+.venv
+.git
+.agents
+.codex
+__pycache__
+*.pyc
+.DS_Store
+datasets
+evaluation
+backend/models/gend-clip-l14.safetensors
+backend/models/thresholds.json

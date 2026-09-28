@@ -1,0 +1,10 @@
+.venv/
+.agents/
+.codex/
+skills-lock.json
+__pycache__/
+.pytest_cache/
+backend/models/gend-clip-l14.safetensors
+backend/models/thresholds.json
+datasets/
+evaluation/
