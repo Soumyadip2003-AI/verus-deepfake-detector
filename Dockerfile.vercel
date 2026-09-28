@@ -1,0 +1,19 @@
+FROM python:3.12-slim
+
+ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 OMP_NUM_THREADS=1 \
+    VERITY_DEVICE=cpu VERITY_PRODUCTION=1
+WORKDIR /app
+
+COPY requirements.txt .
+RUN python -m pip install --no-cache-dir --index-url https://download.pytorch.org/whl/cpu torch==2.8.0 \
+    && python -m pip install --no-cache-dir -r requirements.txt \
+    && useradd --system --uid 10001 --create-home verity
+
+COPY backend ./backend
+COPY frontend ./frontend
+ADD --checksum=sha256:d76f0bdfd74a29fe1b1c1b84a80ac92486993e426878e8c7a3944281fbb96833 \
+    https://huggingface.co/yermandy/GenD_CLIP_L_14/resolve/891ce014a0308386c4d7d25b3dcf436a22db5504/model.safetensors \
+    /app/backend/models/gend-clip-l14.safetensors
+
+USER 10001:10001
+CMD ["sh", "-c", "exec python -m uvicorn backend.app:app --host 0.0.0.0 --port ${PORT:-80} --workers 1 --limit-concurrency 4 --timeout-keep-alive 5"]

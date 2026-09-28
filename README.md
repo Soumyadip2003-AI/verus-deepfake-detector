@@ -91,6 +91,10 @@ The included `Dockerfile`, `compose.yaml`, and `Caddyfile` set up one CPU infere
 
 The health response must include `"ready":true` and `"calibrated":true`. Check `docker compose logs app proxy` if it does not. Caddy obtains and renews TLS certificates for the configured hostname. The app accepts anonymous uploads; for a public launch, configure request-rate controls at your host or edge provider and monitor CPU, memory, error rates, and false-result reports. Review the privacy policy and dataset rights for your actual deployment jurisdiction. Do not use this detector as the sole basis for consequential decisions.
 
+## Deploy on Vercel
+
+`Dockerfile.vercel` packages the same CPU service as a Vercel container Function, including the verified checkpoint and calibrated thresholds. Create a new Vercel project from this repository with Fluid compute enabled. New projects support large Functions automatically; an existing project must set `VERCEL_SUPPORT_LARGE_FUNCTIONS=1` before redeploying. Vercel limits Function request bodies to 4.5 MB, so the browser rejects files over 4 MB on this deployment.
+
 ## Model choice and limits
 
 [GenD CLIP ViT-L/14](https://github.com/yermandy/GenD) is a pretrained face manipulation detector from [WACV 2026 research](https://openaccess.thecvf.com/content/WACV2026/papers/Yermakov_Deepfake_Detection_that_Generalizes_Across_Benchmarks_WACV_2026_paper.pdf), evaluated across 14 benchmarks. Its [released weights](https://huggingface.co/yermandy/GenD_CLIP_L_14) and code are MIT licensed. [OpenCV YuNet](https://github.com/opencv/opencv_zoo/tree/main/models/face_detection_yunet) supplies face landmarks for alignment; its bundled model is MIT licensed (see `backend/models/LICENSE-YUNET`).

@@ -8,4 +8,3 @@ __pycache__
 datasets
 evaluation
 backend/models/gend-clip-l14.safetensors
-backend/models/thresholds.json

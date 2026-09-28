@@ -51,9 +51,9 @@ function showFile(file) {
   error.hidden = true;
   if (!file) return;
   const allowed = ['image/png', 'image/jpeg', 'image/webp', 'video/mp4', 'video/webm', 'video/quicktime'];
-  if (!allowed.includes(file.type) || file.size === 0 || file.size > 100 * 1024 * 1024) {
+  if (!allowed.includes(file.type) || file.size === 0 || file.size > 4 * 1024 * 1024) {
     clearFile();
-    error.textContent = 'Choose a non-empty JPG, PNG, WebP, MP4, WebM, or MOV file up to 100 MB.';
+    error.textContent = 'Choose a non-empty JPG, PNG, WebP, MP4, WebM, or MOV file up to 4 MB.';
     error.hidden = false;
     return;
   }
