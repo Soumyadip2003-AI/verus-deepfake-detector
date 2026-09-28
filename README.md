@@ -17,7 +17,7 @@ curl -fL -o backend/models/gend-clip-l14.safetensors 'https://huggingface.co/yer
 
 For later runs, double-click `start.command` on macOS or run `./start.command` in a terminal. Open <http://127.0.0.1:8000> in your browser. Keep the server terminal open during analysis. Opening `frontend/index.html` directly or using a separate static server will not connect the page to the API.
 
-Choose a file and press **Run detection**. The classification appears directly below the media preview as **NO STRONG SIGNAL**, **LIKELY FAKE**, or **INCONCLUSIVE**, alongside the fake signal score. These are model estimates, not proof of authenticity. The API is at `POST /api/analyze`, with multipart field `file`; API docs are at <http://127.0.0.1:8000/api/docs>. `GET /api/health` reports whether the detector can load and is ready.
+Choose a file and press **Run detection**. The classification appears directly below the media preview as **LIKELY REAL**, **LIKELY FAKE**, or **INCONCLUSIVE**, alongside the fake signal score. These are model estimates, not proof of authenticity. The API is at `POST /api/analyze`, with multipart field `file`; API docs are at <http://127.0.0.1:8000/api/docs>. `GET /api/health` reports whether the detector can load and is ready.
 
 The downloaded checkpoint's SHA-256 is `d76f0bdfd74a29fe1b1c1b84a80ac92486993e426878e8c7a3944281fbb96833`. The bundled YuNet model's SHA-256 is `8f2383e4dd3cfbb4553ea8718107fc0423210dc964f9f4280604804ed2552fa4`.
 

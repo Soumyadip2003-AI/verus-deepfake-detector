@@ -99,7 +99,7 @@ runButton.addEventListener('click', async () => {
     if (!response.ok) throw new Error(typeof result.detail === 'string' ? result.detail : 'Analysis failed. Please try again.');
     const names = {
       likely_manipulated: 'LIKELY FAKE',
-      no_strong_signal: 'NO STRONG SIGNAL',
+      no_strong_signal: 'LIKELY REAL',
       inconclusive: 'INCONCLUSIVE'
     };
     document.querySelector('#analysis-title').textContent = 'Analysis complete';
@@ -113,7 +113,7 @@ runButton.addEventListener('click', async () => {
     } else {
       const sample = `${result.frames_with_faces} of ${result.frames_sampled} sampled frame${result.frames_sampled === 1 ? '' : 's'} had a detectable face.`;
       const context = result.verdict === 'no_strong_signal'
-        ? ' No strong manipulation signal was found; this does not prove authenticity.'
+        ? " The score falls in the model's likely-real range; this does not prove authenticity."
         : ' This is a model estimate, not proof of manipulation.';
       note.textContent = `${sample}${result.multiple_faces ? ' Only the largest face in each frame was analyzed.' : ''}${context}${result.calibrated ? '' : ' These demo thresholds have not been validated for this project.'} The model may miss fully generated imagery. Verify important claims with the source.`;
     }
