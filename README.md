@@ -1,6 +1,6 @@
 # Verus: Deepfake Detection
 
-This project serves the existing website and analyzes a visible face in a JPG, PNG, WebP, MP4, WebM, or MOV upload. The API returns a GenD fake score for the largest detected face in an image or in up to eight sampled video frames. Files are written to a temporary location during analysis and deleted after the response.
+This project serves the existing website and analyzes a visible face in a JPG, PNG, WebP, MP4, WebM, or MOV upload. The API returns a GenD fake score for the largest detected face in an image or in up to eight sampled video frames. Classification thresholds are validated only for HiDF-style face-swap videos, so still images return `inconclusive` instead of an unsupported real/fake claim. Files are written to a temporary location during analysis and deleted after the response.
 
 `frontend/` contains the website and images. `backend/` contains the API and model files. `tests/` contains API checks.
 

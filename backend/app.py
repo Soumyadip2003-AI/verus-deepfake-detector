@@ -292,10 +292,13 @@ def analyze(file: UploadFile = File(...)):
                     logging.exception("Detector initialization failed")
                     raise HTTPException(503, "Detector could not load; check server logs.") from exc
             try:
-                result = _detector.analyze(path, suffix in {".mp4", ".webm", ".mov"})
-                result["verdict"] = classify(result["fake_score"], real_max, fake_min)
+                is_video = suffix in {".mp4", ".webm", ".mov"}
+                result = _detector.analyze(path, is_video)
+                # The deployed thresholds were validated on face-swap videos, not still images.
+                result["verdict"] = classify(result["fake_score"], real_max, fake_min) if is_video else "inconclusive"
                 result["fake_score"] = round(result["fake_score"], 4) if result["fake_score"] is not None else None
-                result["calibrated"] = calibrated
+                result["calibrated"] = calibrated and is_video
+                result["media_type"] = "video" if is_video else "image"
                 return result
             except (ValueError, cv2.error) as exc:
                 raise HTTPException(422, str(exc)) from exc

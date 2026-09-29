@@ -32,7 +32,7 @@ function resetResult() {
   verdict.textContent = 'Waiting for scan';
   resultPanel.dataset.verdict = 'pending';
   score.textContent = '—';
-  note.textContent = 'The model looks for face edits and may miss fully AI-generated images. Its score is an estimate, not proof.';
+  note.textContent = 'Face-swap video detection is validated. Still-image results are experimental and return inconclusive.';
 }
 
 function clearFile() {
@@ -107,15 +107,17 @@ runButton.addEventListener('click', async () => {
     status.dataset.state = 'complete';
     verdict.textContent = names[result.verdict] || 'INCONCLUSIVE';
     resultPanel.dataset.verdict = result.verdict || 'inconclusive';
-    score.textContent = result.fake_score == null ? '—' : `${(result.fake_score * 100).toFixed(1)}%`;
+    score.textContent = result.fake_score == null || !result.calibrated ? '—' : `${(result.fake_score * 100).toFixed(1)}%`;
     if (result.frames_with_faces === 0) {
       note.textContent = 'No face was found in the sampled media. This model cannot assess content without a visible face.';
+    } else if (result.media_type === 'image' && !result.calibrated) {
+      note.textContent = 'Still-image accuracy has not been validated, so VERUS will not call this photo real or fake. Use a face-swap video for a calibrated result.';
     } else {
       const sample = `${result.frames_with_faces} of ${result.frames_sampled} sampled frame${result.frames_sampled === 1 ? '' : 's'} had a detectable face.`;
       const context = result.verdict === 'no_strong_signal'
         ? " The score falls in the model's likely-real range; this does not prove authenticity."
         : ' This is a model estimate, not proof of manipulation.';
-      note.textContent = `${sample}${result.multiple_faces ? ' Only the largest face in each frame was analyzed.' : ''}${context}${result.calibrated ? '' : ' These demo thresholds have not been validated for this project.'} The model may miss fully generated imagery. Verify important claims with the source.`;
+      note.textContent = `${sample}${result.multiple_faces ? ' Only the largest face in each frame was analyzed.' : ''}${context} The model may miss fully generated imagery. Verify important claims with the source.`;
     }
   } catch (cause) {
     if (cause.name !== 'AbortError') {

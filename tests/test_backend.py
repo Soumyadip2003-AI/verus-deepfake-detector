@@ -73,6 +73,19 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(response.json()['verdict'], 'inconclusive')
         self.assertFalse(seen[0].exists())
 
+    def test_still_image_abstains_from_video_thresholds(self):
+        backend._detector = type('StubDetector', (), {
+            'analyze': lambda _self, _path, is_video: {
+                'fake_score': .1, 'frames_sampled': 1, 'frames_with_faces': 1,
+                'multiple_faces': False, 'model': 'test'
+            }
+        })()
+        response = self.client.post('/api/analyze', files={'file': ('face.png', b'png', 'image/png')})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()['verdict'], 'inconclusive')
+        self.assertFalse(response.json()['calibrated'])
+        self.assertEqual(response.json()['media_type'], 'image')
+
     def test_production_refuses_uncalibrated_results(self):
         with TemporaryDirectory() as temp, patch.object(backend, 'THRESHOLDS_FILE', Path(temp) / 'missing.json'), \
              patch.object(backend, 'PRODUCTION', True):
