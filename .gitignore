@@ -9,6 +9,8 @@ backend/models/ai-image/.cache/
 backend/models/ai-image/runC/checkpoints/best.pt
 datasets/
 evaluation/
+output/
+tmp/
 .vercel
 .env*
 .DS_Store

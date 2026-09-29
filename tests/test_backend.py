@@ -137,7 +137,7 @@ class ApiTests(unittest.TestCase):
                 self.assertFalse(self.client.get('/api/health').json()['ready'])
                 backend.thresholds.cache_clear()
 
-    def test_health_and_analysis_reject_a_broken_detector(self):
+    def test_health_is_lightweight_and_analysis_rejects_a_broken_detector(self):
         with TemporaryDirectory() as temp:
             root = Path(temp)
             checkpoint, face = root / 'model', root / 'face'
@@ -150,11 +150,23 @@ class ApiTests(unittest.TestCase):
                  patch.object(backend.logging, 'exception'):
                 backend.thresholds.cache_clear()
                 health = self.client.get('/api/health').json()
-                self.assertFalse(health['ready'])
-                self.assertIn('could not load', health['problem'])
+                self.assertTrue(health['ready'])
                 response = self.client.post('/api/analyze', files={'file': ('clip.mp4', b'video', 'video/mp4')})
                 self.assertEqual(response.status_code, 503)
                 backend.thresholds.cache_clear()
+
+    def test_detector_switch_releases_the_other_model(self):
+        video = object()
+        backend._detector = None
+        backend._photo_detector = object()
+        with patch.object(backend, 'Detector', return_value=video):
+            self.assertIs(backend.detector_for(True), video)
+            self.assertIsNone(backend._photo_detector)
+
+        photo = object()
+        with patch.object(backend, 'PhotoDetector', return_value=photo):
+            self.assertIs(backend.detector_for(False), photo)
+            self.assertIsNone(backend._detector)
 
     def test_thresholds_reject_changed_inference_pipeline(self):
         with TemporaryDirectory() as temp:

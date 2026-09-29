@@ -21,4 +21,4 @@ RUN chmod 0444 /app/backend/models/gend-clip-l14.safetensors \
     /app/backend/models/ai-image/runC/checkpoints/best.pt
 
 USER 10001:10001
-CMD ["sh", "-c", "exec python -m uvicorn backend.app:app --host 0.0.0.0 --port ${PORT:-80} --workers 1 --limit-concurrency 4 --timeout-keep-alive 5"]
+CMD ["sh", "-c", "exec python -m uvicorn backend.app:app --host 0.0.0.0 --port ${PORT:-80} --workers 1 --limit-concurrency 16 --timeout-keep-alive 5"]

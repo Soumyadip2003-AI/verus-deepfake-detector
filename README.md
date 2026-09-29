@@ -25,7 +25,7 @@ The GenD checkpoint SHA-256 is `d76f0bdfd74a29fe1b1c1b84a80ac92486993e426878e8c7
 
 ## Validate and calibrate
 
-The repository includes separate photo and video thresholds. Production mode (`VERITY_PRODUCTION=1`) refuses analysis when either threshold file is missing or does not match its model and inference pipeline. The health endpoint loads both detectors before reporting ready.
+The repository includes separate photo and video thresholds. Production mode (`VERITY_PRODUCTION=1`) refuses analysis when either threshold file is missing or does not match its model and inference pipeline. The health endpoint verifies the required artifacts and threshold bindings without loading both neural networks. Analysis loads the requested detector lazily and releases the other detector, keeping inference inside Vercel Hobby's 2 GB runtime limit.
 
 ### Photo calibration and held-out validation
 
@@ -107,7 +107,7 @@ The health response must include `"ready":true` and `"calibrated":true`. Check `
 
 ## Deploy on Vercel
 
-`Dockerfile.vercel` packages the CPU service as a Vercel container Function and downloads both checkpoints with fixed checksums. Create a Vercel project from this repository with Fluid compute enabled. New projects support large Functions automatically; an existing project must set `VERCEL_SUPPORT_LARGE_FUNCTIONS=1` before redeploying. Vercel limits Function request bodies to 4.5 MB, so the browser rejects files over 4 MB.
+`Dockerfile.vercel` packages the CPU service as a Vercel container Function and downloads both checkpoints with fixed checksums. Create a Vercel project from this repository with Fluid compute enabled. New projects support large Functions automatically; an existing project must set `VERCEL_SUPPORT_LARGE_FUNCTIONS=1` before redeploying. Vercel limits Function request bodies to 4.5 MB, so the browser rejects files over 4 MB. The Hobby runtime provides 2 GB of memory, so VERUS keeps only one detector resident and swaps models when the media type changes.
 
 ## Model choice and limits
 

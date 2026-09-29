@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import gc
 import json
 import hashlib
 import logging
@@ -249,6 +250,24 @@ _detector: Detector | None = None
 _photo_detector: PhotoDetector | None = None
 
 
+def detector_for(is_video: bool) -> Detector | PhotoDetector:
+    """Keep one model resident so inference fits Vercel's 2 GB runtime."""
+    global _detector, _photo_detector
+    if is_video:
+        if _photo_detector is not None:
+            _photo_detector = None
+            gc.collect()
+        if _detector is None:
+            _detector = Detector()
+        return _detector
+    if _detector is not None:
+        _detector = None
+        gc.collect()
+    if _photo_detector is None:
+        _photo_detector = PhotoDetector()
+    return _photo_detector
+
+
 @app.get("/")
 def homepage():
     return FileResponse(FRONTEND / "index.html")
@@ -263,7 +282,6 @@ def frontend_file(filename: str):
 
 @app.get("/api/health")
 def health():
-    global _detector, _photo_detector
     video_available = CHECKPOINT.is_file() and FACE_MODEL.is_file()
     photo_available = PHOTO_CHECKPOINT.is_file()
     model_available = video_available and photo_available
@@ -276,16 +294,6 @@ def health():
     except (ValueError, KeyError, OSError, json.JSONDecodeError) as exc:
         calibrated, problem = False, str(exc)
     ready = model_available and problem is None and (calibrated or not PRODUCTION)
-    if ready and _detector is None:
-        try:
-            with _lock:
-                if _detector is None:
-                    _detector = Detector()
-                if _photo_detector is None:
-                    _photo_detector = PhotoDetector()
-        except Exception:
-            logging.exception("Detector initialization failed")
-            ready, problem = False, "Detector could not load; check server logs."
     return {"model_available": model_available, "calibrated": calibrated,
             "video_calibrated": video_calibrated, "photo_calibrated": photo_calibrated,
             "ready": ready,
@@ -316,24 +324,15 @@ def analyze(file: UploadFile = File(...)):
         if size == 0:
             raise HTTPException(422, "The file is empty.")
         with _lock:
-            if is_video and _detector is None:
-                try:
-                    _detector = Detector()
-                except FileNotFoundError as exc:
-                    raise HTTPException(503, str(exc)) from exc
-                except Exception as exc:
-                    logging.exception("Detector initialization failed")
-                    raise HTTPException(503, "Detector could not load; check server logs.") from exc
-            if not is_video and _photo_detector is None:
-                try:
-                    _photo_detector = PhotoDetector()
-                except FileNotFoundError as exc:
-                    raise HTTPException(503, str(exc)) from exc
-                except Exception as exc:
-                    logging.exception("Photo detector initialization failed")
-                    raise HTTPException(503, "Photo detector could not load; check server logs.") from exc
             try:
-                result = _detector.analyze(path, True) if is_video else _photo_detector.analyze(path)
+                detector = detector_for(is_video)
+            except FileNotFoundError as exc:
+                raise HTTPException(503, str(exc)) from exc
+            except Exception as exc:
+                logging.exception("Detector initialization failed")
+                raise HTTPException(503, "Detector could not load; check server logs.") from exc
+            try:
+                result = detector.analyze(path, True) if is_video else detector.analyze(path)
                 result["verdict"] = classify(result["fake_score"], real_max, fake_min) if calibrated else "inconclusive"
                 result["fake_score"] = round(result["fake_score"], 4) if result["fake_score"] is not None else None
                 result["calibrated"] = calibrated
