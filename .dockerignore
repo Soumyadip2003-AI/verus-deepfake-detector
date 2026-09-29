@@ -8,3 +8,5 @@ __pycache__
 datasets
 evaluation
 backend/models/gend-clip-l14.safetensors
+backend/models/ai-image/.cache
+backend/models/ai-image/runC/checkpoints/best.pt

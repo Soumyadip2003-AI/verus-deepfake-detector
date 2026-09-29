@@ -23,13 +23,18 @@ from PIL import Image, ImageOps, UnidentifiedImageError
 from safetensors.torch import load_model
 from transformers import CLIPImageProcessor, CLIPVisionConfig, CLIPVisionModel
 
+from backend.photo_detector import (CHECKPOINT as PHOTO_CHECKPOINT, PhotoDetector,
+                                    pipeline_hashes as photo_pipeline_hashes)
+
 ROOT = Path(__file__).resolve().parent.parent
 FRONTEND = ROOT / "frontend"
 MODELS = ROOT / "backend" / "models"
 CHECKPOINT = MODELS / "gend-clip-l14.safetensors"
 FACE_MODEL = MODELS / "face_detection_yunet_2023mar.onnx"
 THRESHOLDS_FILE = Path(os.environ.get("VERITY_THRESHOLDS_FILE", str(MODELS / "thresholds.json")))
+PHOTO_THRESHOLDS_FILE = Path(os.environ.get("VERITY_PHOTO_THRESHOLDS_FILE", str(MODELS / "photo-thresholds.json")))
 THRESHOLD_VERSION = 3
+PHOTO_THRESHOLD_VERSION = 1
 PRODUCTION = os.environ.get("VERITY_PRODUCTION") == "1"
 MAX_UPLOAD = 100 * 1024 * 1024
 MAX_FRAMES = 8
@@ -72,6 +77,24 @@ def thresholds() -> tuple[float, float, bool]:
         raise ValueError("Thresholds were validated with different model files.")
     if any(config.get(key) != value for key, value in pipeline_hashes().items()):
         raise ValueError("Thresholds were validated with a different inference pipeline.")
+    return real_max, fake_min, True
+
+
+@lru_cache(maxsize=1)
+def photo_thresholds() -> tuple[float, float, bool]:
+    if not PHOTO_THRESHOLDS_FILE.is_file():
+        if PRODUCTION:
+            raise ValueError("Validated photo thresholds are missing. Run the photo evaluation workflow in README.md.")
+        return 0.05, 0.98, False
+    config = json.loads(PHOTO_THRESHOLDS_FILE.read_text())
+    try:
+        real_max, fake_min = float(config["real_max"]), float(config["fake_min"])
+    except (KeyError, TypeError, ValueError) as exc:
+        raise ValueError("Photo threshold configuration is invalid.") from exc
+    if (config.get("version") != PHOTO_THRESHOLD_VERSION or not 0 <= real_max < fake_min <= 1
+            or config.get("model_sha256") != sha256(PHOTO_CHECKPOINT)
+            or any(config.get(key) != value for key, value in photo_pipeline_hashes().items())):
+        raise ValueError("Photo thresholds were validated with a different model or inference pipeline.")
     return real_max, fake_min, True
 
 
@@ -223,6 +246,7 @@ app = FastAPI(title="Verus Deepfake Detection API", docs_url="/api/docs", redoc_
 app.mount("/assets", StaticFiles(directory=FRONTEND / "assets"), name="assets")
 _lock = threading.Lock()  # ponytail: serial inference; use a worker queue if concurrent traffic grows.
 _detector: Detector | None = None
+_photo_detector: PhotoDetector | None = None
 
 
 @app.get("/")
@@ -239,10 +263,15 @@ def frontend_file(filename: str):
 
 @app.get("/api/health")
 def health():
-    global _detector
-    model_available = CHECKPOINT.is_file() and FACE_MODEL.is_file()
+    global _detector, _photo_detector
+    video_available = CHECKPOINT.is_file() and FACE_MODEL.is_file()
+    photo_available = PHOTO_CHECKPOINT.is_file()
+    model_available = video_available and photo_available
+    video_calibrated = photo_calibrated = False
     try:
-        _, _, calibrated = thresholds() if model_available else (0.3, 0.7, False)
+        _, _, video_calibrated = thresholds() if video_available else (0.3, 0.7, False)
+        _, _, photo_calibrated = photo_thresholds() if photo_available else (0.05, 0.98, False)
+        calibrated = video_calibrated and photo_calibrated
         problem = None
     except (ValueError, KeyError, OSError, json.JSONDecodeError) as exc:
         calibrated, problem = False, str(exc)
@@ -252,22 +281,26 @@ def health():
             with _lock:
                 if _detector is None:
                     _detector = Detector()
+                if _photo_detector is None:
+                    _photo_detector = PhotoDetector()
         except Exception:
             logging.exception("Detector initialization failed")
             ready, problem = False, "Detector could not load; check server logs."
     return {"model_available": model_available, "calibrated": calibrated,
+            "video_calibrated": video_calibrated, "photo_calibrated": photo_calibrated,
             "ready": ready,
             "problem": problem}
 
 
 @app.post("/api/analyze")
 def analyze(file: UploadFile = File(...)):
-    global _detector
+    global _detector, _photo_detector
     suffix = MIME_TYPES.get(file.content_type or "")
     if suffix is None:
         raise HTTPException(415, "Use a JPG, PNG, WebP, MP4, WebM, or MOV file.")
+    is_video = suffix in {".mp4", ".webm", ".mov"}
     try:
-        real_max, fake_min, calibrated = thresholds()
+        real_max, fake_min, calibrated = thresholds() if is_video else photo_thresholds()
     except (ValueError, KeyError, OSError, json.JSONDecodeError) as exc:
         raise HTTPException(503, str(exc)) from exc
     path = None
@@ -283,7 +316,7 @@ def analyze(file: UploadFile = File(...)):
         if size == 0:
             raise HTTPException(422, "The file is empty.")
         with _lock:
-            if _detector is None:
+            if is_video and _detector is None:
                 try:
                     _detector = Detector()
                 except FileNotFoundError as exc:
@@ -291,13 +324,19 @@ def analyze(file: UploadFile = File(...)):
                 except Exception as exc:
                     logging.exception("Detector initialization failed")
                     raise HTTPException(503, "Detector could not load; check server logs.") from exc
+            if not is_video and _photo_detector is None:
+                try:
+                    _photo_detector = PhotoDetector()
+                except FileNotFoundError as exc:
+                    raise HTTPException(503, str(exc)) from exc
+                except Exception as exc:
+                    logging.exception("Photo detector initialization failed")
+                    raise HTTPException(503, "Photo detector could not load; check server logs.") from exc
             try:
-                is_video = suffix in {".mp4", ".webm", ".mov"}
-                result = _detector.analyze(path, is_video)
-                # The deployed thresholds were validated on face-swap videos, not still images.
-                result["verdict"] = classify(result["fake_score"], real_max, fake_min) if is_video else "inconclusive"
+                result = _detector.analyze(path, True) if is_video else _photo_detector.analyze(path)
+                result["verdict"] = classify(result["fake_score"], real_max, fake_min) if calibrated else "inconclusive"
                 result["fake_score"] = round(result["fake_score"], 4) if result["fake_score"] is not None else None
-                result["calibrated"] = calibrated and is_video
+                result["calibrated"] = calibrated
                 result["media_type"] = "video" if is_video else "image"
                 return result
             except (ValueError, cv2.error) as exc:

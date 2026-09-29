@@ -1,6 +1,6 @@
 # Verus: Deepfake Detection
 
-This project serves the existing website and analyzes a visible face in a JPG, PNG, WebP, MP4, WebM, or MOV upload. The API returns a GenD fake score for the largest detected face in an image or in up to eight sampled video frames. Classification thresholds are validated only for HiDF-style face-swap videos, so still images return `inconclusive` instead of an unsupported real/fake claim. Files are written to a temporary location during analysis and deleted after the response.
+This project serves the VERUS website with two separate detectors. JPG, PNG, and WebP photos use a CLIP ViT-B/16 model trained on a balanced set of real and AI-generated images. MP4, WebM, and MOV videos keep the GenD face-swap model and analyze the largest face in up to eight sampled frames. Each detector has separately validated abstaining thresholds, so uncertain scores return `inconclusive`. Uploads are deleted after each response.
 
 `frontend/` contains the website and images. `backend/` contains the API and model files. `tests/` contains API checks.
 
@@ -12,6 +12,8 @@ Python 3.12 is recommended. The pretrained GenD checkpoint is 1.22 GB and is del
 uv venv --python 3.12 .venv
 uv pip install --python .venv/bin/python -r requirements.txt
 curl -fL -o backend/models/gend-clip-l14.safetensors 'https://huggingface.co/yermandy/GenD_CLIP_L_14/resolve/891ce014a0308386c4d7d25b3dcf436a22db5504/model.safetensors'
+mkdir -p backend/models/ai-image/runC/checkpoints
+curl -fL -o backend/models/ai-image/runC/checkpoints/best.pt 'https://huggingface.co/husseinelsaadi/aidetect-vit-b16/resolve/main/runC/checkpoints/best.pt'
 .venv/bin/uvicorn backend.app:app --host 127.0.0.1 --port 8000
 ```
 
@@ -19,11 +21,23 @@ For later runs, double-click `start.command` on macOS or run `./start.command` i
 
 Choose a file and press **Run detection**. The classification appears directly below the media preview as **LIKELY REAL**, **LIKELY FAKE**, or **INCONCLUSIVE**, alongside the fake signal score. These are model estimates, not proof of authenticity. The API is at `POST /api/analyze`, with multipart field `file`; API docs are at <http://127.0.0.1:8000/api/docs>. `GET /api/health` reports whether the detector can load and is ready.
 
-The downloaded checkpoint's SHA-256 is `d76f0bdfd74a29fe1b1c1b84a80ac92486993e426878e8c7a3944281fbb96833`. The bundled YuNet model's SHA-256 is `8f2383e4dd3cfbb4553ea8718107fc0423210dc964f9f4280604804ed2552fa4`.
+The GenD checkpoint SHA-256 is `d76f0bdfd74a29fe1b1c1b84a80ac92486993e426878e8c7a3944281fbb96833`. The photo checkpoint SHA-256 is `ef8fcafb83fd40a7a88b4f21c84ea32b0873a8081144b592ac055ceb1028680f`. The bundled YuNet model SHA-256 is `8f2383e4dd3cfbb4553ea8718107fc0423210dc964f9f4280604804ed2552fa4`.
 
 ## Validate and calibrate
 
-The repository includes thresholds validated on the HiDF workflow below. Production mode (`VERITY_PRODUCTION=1`) refuses analysis if `backend/models/thresholds.json` is missing or does not match the model, face detector, preprocessing files, and inference code used during validation. The health endpoint loads the complete detector before reporting ready.
+The repository includes separate photo and video thresholds. Production mode (`VERITY_PRODUCTION=1`) refuses analysis when either threshold file is missing or does not match its model and inference pipeline. The health endpoint loads both detectors before reporting ready.
+
+### Photo calibration and held-out validation
+
+The photo checkpoint was trained by its author on about 195,000 balanced real and generated images from more than 1,100 generators. VERUS independently samples OpenFake through its public dataset API and adds RWFS real reference photos. Generator families and real sources used to fit thresholds do not appear in the final balanced Reddit test.
+
+```sh
+.venv/bin/python -m scripts.openfake_sample --out datasets/OpenFake-sample
+.venv/bin/python -m scripts.validate_photo score datasets/OpenFake-sample/manifest.csv evaluation/openfake_photo_scores.csv --root datasets/OpenFake-sample
+.venv/bin/python -m scripts.validate_photo calibrate evaluation/openfake_photo_scores.csv evaluation/openfake_photo_report.json backend/models/photo-thresholds.json
+```
+
+The completed run selected conservative thresholds of **0.0622** and **0.9782**. On 200 held-out in-the-wild images, 113 results were correct, 81 were inconclusive, and 6 were wrong. Accuracy among the 119 conclusive results was **95.0%** and AUROC was **0.9325**. The one-sided 95% error bounds were **5.87%** for generated images called likely real and **8.62%** for real images called likely fake. The gate passed its 10% bound with at least 20% coverage per class. These results support the labels for similar still images; they do not prove authenticity or cover every future generator.
 
 ### HiDF calibration and held-out validation
 
@@ -79,8 +93,8 @@ The scoring command uses CPU inference. Run it on the Linux deployment host or i
 
 The included `Dockerfile`, `compose.yaml`, and `Caddyfile` set up one CPU inference worker behind Caddy with HTTPS, an upload body limit, health checks, and a read-only app filesystem. Use an AMD64 Linux VPS with at least 8 GB RAM and 20 GB free disk space, plus a domain pointing to it. Open ports 80 and 443. Keep port 8000 private; Compose does not publish it.
 
-1. Install Docker Engine and the Compose plugin on the VPS, and copy this project to it. Obtain the GenD checkpoint using the command above and verify its SHA-256 with `sha256sum backend/models/gend-clip-l14.safetensors`.
-2. The included `backend/models/thresholds.json` supports the validated noncommercial HiDF research deployment. For another use case, run the validation workflow with representative labeled media and replace that file. It is bound to the exact model, face detector, preprocessing files, and inference code used during validation.
+1. Install Docker Engine and the Compose plugin on the VPS, and copy this project to it. Obtain both checkpoints using the commands above and verify their SHA-256 values.
+2. The included threshold files support the documented noncommercial research deployment. For another use case, run the validation workflows with representative labeled media. Each threshold file is bound to its exact model and inference pipeline.
 3. Set `VERITY_DOMAIN` to your DNS hostname and start the stack:
 
    ```sh
@@ -93,15 +107,19 @@ The health response must include `"ready":true` and `"calibrated":true`. Check `
 
 ## Deploy on Vercel
 
-`Dockerfile.vercel` packages the same CPU service as a Vercel container Function, including the verified checkpoint and calibrated thresholds. Create a new Vercel project from this repository with Fluid compute enabled. New projects support large Functions automatically; an existing project must set `VERCEL_SUPPORT_LARGE_FUNCTIONS=1` before redeploying. Vercel limits Function request bodies to 4.5 MB, so the browser rejects files over 4 MB on this deployment.
+`Dockerfile.vercel` packages the CPU service as a Vercel container Function and downloads both checkpoints with fixed checksums. Create a Vercel project from this repository with Fluid compute enabled. New projects support large Functions automatically; an existing project must set `VERCEL_SUPPORT_LARGE_FUNCTIONS=1` before redeploying. Vercel limits Function request bodies to 4.5 MB, so the browser rejects files over 4 MB.
 
 ## Model choice and limits
 
-[GenD CLIP ViT-L/14](https://github.com/yermandy/GenD) is a pretrained face manipulation detector from [WACV 2026 research](https://openaccess.thecvf.com/content/WACV2026/papers/Yermakov_Deepfake_Detection_that_Generalizes_Across_Benchmarks_WACV_2026_paper.pdf), evaluated across 14 benchmarks. Its [released weights](https://huggingface.co/yermandy/GenD_CLIP_L_14) and code are MIT licensed. [OpenCV YuNet](https://github.com/opencv/opencv_zoo/tree/main/models/face_detection_yunet) supplies face landmarks for alignment; its bundled model is MIT licensed (see `backend/models/LICENSE-YUNET`).
+[GenD CLIP ViT-L/14](https://github.com/yermandy/GenD) remains the video face-manipulation detector. Its [released weights](https://huggingface.co/yermandy/GenD_CLIP_L_14) and code are MIT licensed. [OpenCV YuNet](https://github.com/opencv/opencv_zoo/tree/main/models/face_detection_yunet) supplies face landmarks for alignment. Photos use [aidetect-vit-b16](https://huggingface.co/husseinelsaadi/aidetect-vit-b16), trained on balanced OpenFake and Community Forensics data and licensed CC BY-NC 4.0. The validation datasets and photo model limit this deployment to noncommercial use.
 
-There is no universal best detector for every new deepfake technique. GenD was trained on face crops for face manipulations and can miss entirely AI-generated faces. This implementation uses YuNet rather than the paper's RetinaFace preprocessing, so its scores may differ from published results. The included thresholds are calibrated only for the documented HiDF video workflow. A score is not a probability that the media is authentic. A low fake score does not prove a file is real.
+There is no universal detector for every deepfake technique. The photo model targets fully generated images and may miss local face swaps. GenD targets face manipulation in video and may miss entirely generated frames. A score is not proof that media is authentic.
 
 Video analysis sequentially decodes at most the first 240 frames and averages scores from up to eight evenly spaced frames. It does **not** inspect audio or run a temporal neural network. Only the largest face in each sampled frame is checked. Media with no detectable face returns `inconclusive`. Validate on your own real, manipulated, compressed, and demographic test sets before relying on a result in a consequential setting.
+
+### DFDC Preview next phase
+
+The smaller Meta DFDC Preview set is reserved for the next video evaluation cycle. It contains face-swap videos and cannot improve the fully generated photo model. Downloading it requires the account owner to accept Meta's dataset terms and configure AWS credentials locally. Once available under `datasets/DFDC-preview`, add it to the video manifest and run the existing `scripts.validate score` and `calibrate` commands before replacing video thresholds. Do not mix its held-out test videos into threshold fitting.
 
 ## Check
 

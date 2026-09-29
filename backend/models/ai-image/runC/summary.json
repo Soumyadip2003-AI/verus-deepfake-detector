@@ -1,0 +1,160 @@
+{
+  "run": "runC",
+  "config": {
+    "model": "clip-vit-b16",
+    "robust": true,
+    "extreme": true,
+    "epochs": 5,
+    "batch": 128,
+    "head_lr": 0.001,
+    "backbone_lr": 1e-05
+  },
+  "seed": 42,
+  "temperature": 1.2825151681900024,
+  "threshold": 0.37999999999999995,
+  "val_metrics": {
+    "accuracy": 0.9753413490931323,
+    "precision": 0.971830985915493,
+    "recall": 0.9786228160328879,
+    "f1": 0.9752150757886111,
+    "auroc": 0.9971254379459801,
+    "ap": 0.9972496549921642,
+    "tn": 4811,
+    "fp": 138,
+    "fn": 104,
+    "tp": 4761,
+    "fnr": 0.021377183967112023,
+    "n": 9814
+  },
+  "history": [
+    {
+      "global_step": 500,
+      "epoch": 0,
+      "train_loss": 0.3635070214867592,
+      "val_loss": 0.1600881429415311,
+      "train_acc": null,
+      "val_acc": 0.9344813531689423,
+      "val_auroc": 0.9844333060526727
+    },
+    {
+      "global_step": 1000,
+      "epoch": 0,
+      "train_loss": 0.2908634851947427,
+      "val_loss": 0.1265804806964471,
+      "train_acc": null,
+      "val_acc": 0.9490523741593642,
+      "val_auroc": 0.991407588647784
+    },
+    {
+      "global_step": 1500,
+      "epoch": 1,
+      "train_loss": 0.16665526327711563,
+      "val_loss": 0.09656748177443061,
+      "train_acc": null,
+      "val_acc": 0.9641328714081924,
+      "val_auroc": 0.9944396046249339
+    },
+    {
+      "global_step": 2000,
+      "epoch": 1,
+      "train_loss": 0.16465234634086542,
+      "val_loss": 0.09300766497492086,
+      "train_acc": null,
+      "val_acc": 0.9638271856531485,
+      "val_auroc": 0.9948154422800126
+    },
+    {
+      "global_step": 2500,
+      "epoch": 1,
+      "train_loss": 0.15964490777160795,
+      "val_loss": 0.08424821732266265,
+      "train_acc": null,
+      "val_acc": 0.967393519461993,
+      "val_auroc": 0.9957781498727929
+    },
+    {
+      "global_step": 3000,
+      "epoch": 2,
+      "train_loss": 0.1271633183652604,
+      "val_loss": 0.07822335660396877,
+      "train_acc": null,
+      "val_acc": 0.9699409007540248,
+      "val_auroc": 0.9961763326111331
+    },
+    {
+      "global_step": 3500,
+      "epoch": 2,
+      "train_loss": 0.12717781437707967,
+      "val_loss": 0.07483260968515192,
+      "train_acc": null,
+      "val_acc": 0.9697371102506623,
+      "val_auroc": 0.9966219052007766
+    },
+    {
+      "global_step": 4000,
+      "epoch": 2,
+      "train_loss": 0.12547639132366392,
+      "val_loss": 0.0792071821734792,
+      "train_acc": null,
+      "val_acc": 0.9684124719788058,
+      "val_auroc": 0.9967841147224816
+    },
+    {
+      "global_step": 4500,
+      "epoch": 3,
+      "train_loss": 0.10400794986865403,
+      "val_loss": 0.07119966978110435,
+      "train_acc": null,
+      "val_acc": 0.9733034440595069,
+      "val_auroc": 0.9968819056119592
+    },
+    {
+      "global_step": 5000,
+      "epoch": 3,
+      "train_loss": 0.1042914113586943,
+      "val_loss": 0.07207967055798646,
+      "train_acc": null,
+      "val_acc": 0.9730996535561443,
+      "val_auroc": 0.9970229329915393
+    },
+    {
+      "global_step": 5500,
+      "epoch": 3,
+      "train_loss": 0.10186527979763772,
+      "val_loss": 0.07247065905035939,
+      "train_acc": null,
+      "val_acc": 0.9724882820460566,
+      "val_auroc": 0.9970184058278303
+    },
+    {
+      "global_step": 6000,
+      "epoch": 4,
+      "train_loss": 0.08837387421927242,
+      "val_loss": 0.07071780597262307,
+      "train_acc": null,
+      "val_acc": 0.9753413490931323,
+      "val_auroc": 0.9970917126530279
+    },
+    {
+      "global_step": 6500,
+      "epoch": 4,
+      "train_loss": 0.08853161639622387,
+      "val_loss": 0.07012398048114796,
+      "train_acc": null,
+      "val_acc": 0.9750356633380884,
+      "val_auroc": 0.9971781856332329
+    },
+    {
+      "global_step": 7000,
+      "epoch": 4,
+      "train_loss": 0.08806692143767386,
+      "val_loss": 0.07079275448307235,
+      "train_acc": null,
+      "val_acc": 0.9746280823313633,
+      "val_auroc": 0.9971228836288415
+    }
+  ],
+  "train_size": 185204,
+  "val_size": 9814,
+  "wall_clock_s": 3001.8
+}

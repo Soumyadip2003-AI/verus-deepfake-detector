@@ -14,6 +14,11 @@ COPY frontend ./frontend
 ADD --checksum=sha256:d76f0bdfd74a29fe1b1c1b84a80ac92486993e426878e8c7a3944281fbb96833 \
     https://huggingface.co/yermandy/GenD_CLIP_L_14/resolve/891ce014a0308386c4d7d25b3dcf436a22db5504/model.safetensors \
     /app/backend/models/gend-clip-l14.safetensors
+ADD --checksum=sha256:ef8fcafb83fd40a7a88b4f21c84ea32b0873a8081144b592ac055ceb1028680f \
+    https://huggingface.co/husseinelsaadi/aidetect-vit-b16/resolve/main/runC/checkpoints/best.pt \
+    /app/backend/models/ai-image/runC/checkpoints/best.pt
+RUN chmod 0444 /app/backend/models/gend-clip-l14.safetensors \
+    /app/backend/models/ai-image/runC/checkpoints/best.pt
 
 USER 10001:10001
 CMD ["sh", "-c", "exec python -m uvicorn backend.app:app --host 0.0.0.0 --port ${PORT:-80} --workers 1 --limit-concurrency 4 --timeout-keep-alive 5"]

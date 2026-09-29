@@ -32,7 +32,7 @@ function resetResult() {
   verdict.textContent = 'Waiting for scan';
   resultPanel.dataset.verdict = 'pending';
   score.textContent = '—';
-  note.textContent = 'Face-swap video detection is validated. Still-image results are experimental and return inconclusive.';
+  note.textContent = 'VERUS uses separate validated detectors for AI-generated photos and face-swap videos.';
 }
 
 function clearFile() {
@@ -108,16 +108,21 @@ runButton.addEventListener('click', async () => {
     verdict.textContent = names[result.verdict] || 'INCONCLUSIVE';
     resultPanel.dataset.verdict = result.verdict || 'inconclusive';
     score.textContent = result.fake_score == null || !result.calibrated ? '—' : `${(result.fake_score * 100).toFixed(1)}%`;
-    if (result.frames_with_faces === 0) {
+    if (result.media_type === 'image') {
+      const context = result.verdict === 'no_strong_signal'
+        ? 'The score is in the likely-real range; this does not prove authenticity.'
+        : result.verdict === 'likely_manipulated'
+          ? 'The score is in the likely-fake range; this is evidence, not proof.'
+          : 'The score falls between the validated decision ranges.';
+      note.textContent = `A separate still-image model analyzed five crops of the photo. ${context} Screenshots, edits, low-resolution files, and new generators can still fool it.`;
+    } else if (result.frames_with_faces === 0) {
       note.textContent = 'No face was found in the sampled media. This model cannot assess content without a visible face.';
-    } else if (result.media_type === 'image' && !result.calibrated) {
-      note.textContent = 'Still-image accuracy has not been validated, so VERUS will not call this photo real or fake. Use a face-swap video for a calibrated result.';
     } else {
       const sample = `${result.frames_with_faces} of ${result.frames_sampled} sampled frame${result.frames_sampled === 1 ? '' : 's'} had a detectable face.`;
       const context = result.verdict === 'no_strong_signal'
         ? " The score falls in the model's likely-real range; this does not prove authenticity."
         : ' This is a model estimate, not proof of manipulation.';
-      note.textContent = `${sample}${result.multiple_faces ? ' Only the largest face in each frame was analyzed.' : ''}${context} The model may miss fully generated imagery. Verify important claims with the source.`;
+      note.textContent = `${sample}${result.multiple_faces ? ' Only the largest face in each frame was analyzed.' : ''}${context} Verify important claims with the source.`;
     }
   } catch (cause) {
     if (cause.name !== 'AbortError') {

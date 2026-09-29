@@ -47,7 +47,7 @@
                 <strong>Take a closer look at your media.</strong>
                 <p>Choose an image or video, or drop it here.</p>
                 <button class="button button-amber" id="choose-file" type="button">Choose a file <span aria-hidden="true">↗</span></button>
-                <small id="upload-help">MP4, WebM and MOV are validated · still images are experimental · up to 4 MB</small>
+                <small id="upload-help">JPG, PNG, WebP, MP4, WebM and MOV · up to 4 MB</small>
               </div>
               <div class="drop-selected" id="drop-selected" hidden>
                 <div class="media-frame" id="media-frame"></div>
@@ -72,7 +72,7 @@
                     <div><span>Fake signal</span><strong id="result-score">—</strong></div>
                   </div>
                   <button class="button button-amber" id="run-detection" type="button">Run detection</button>
-                  <p class="preview-note" id="result-note">The model looks for face edits and may miss fully AI-generated images. Its score is an estimate, not proof.</p>
+                  <p class="preview-note" id="result-note">VERUS uses separate models for AI-generated photos and face-swap videos. Results are estimates, not proof.</p>
                 </div>
               </div>
             </div>
@@ -144,7 +144,7 @@
             <h3>Detection estimate</h3><p>Show the model's score and its limits.</p>
           </li>
         </ol>
-        <p class="pipeline-note">The detector analyzes faces in images and sampled video frames. It does not inspect audio or use a dedicated temporal model.</p>
+        <p class="pipeline-note">Photos use a whole-image AI detector. Videos use face detection on sampled frames. Video audio is not inspected.</p>
       </section>
 
       <section class="awareness" aria-labelledby="awareness-title">

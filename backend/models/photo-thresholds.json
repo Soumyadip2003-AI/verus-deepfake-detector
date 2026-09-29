@@ -1,0 +1,54 @@
+{
+  "version": 1,
+  "real_max": 0.062215786427259445,
+  "fake_min": 0.9782309532165527,
+  "model_sha256": "ef8fcafb83fd40a7a88b4f21c84ea32b0873a8081144b592ac055ceb1028680f",
+  "photo_pipeline_sha256": "e9a4928bbe2ff95503a2b142f72412e42049a166da785e1bc060acf715ffdc9d",
+  "photo_config_sha256": "eaf1c9089a8553c913d27ea66407f8bfc2be9989c80c9f331ddb3d63d4c5e8ad",
+  "validated_at": "2026-09-29T07:52:34.456319+00:00",
+  "target_error_upper_95": 0.1,
+  "calibration_error_upper_95": 0.03,
+  "minimum_coverage": 0.2,
+  "calibration": {
+    "media": 600,
+    "labels": {
+      "fake": 300,
+      "real": 300
+    },
+    "no_face": 0,
+    "detectable_real": 300,
+    "detectable_fake": 300,
+    "source_groups_real": 300,
+    "source_groups_fake": 300,
+    "false_real": 4,
+    "false_fake": 4,
+    "false_real_source_groups": 4,
+    "false_fake_source_groups": 4,
+    "false_real_upper_95": 0.029368493476071258,
+    "false_fake_upper_95": 0.029368493476071258,
+    "real_coverage": 0.5333333333333333,
+    "fake_coverage": 0.7066666666666667,
+    "inconclusive": 220
+  },
+  "test": {
+    "media": 200,
+    "labels": {
+      "fake": 100,
+      "real": 100
+    },
+    "no_face": 0,
+    "detectable_real": 100,
+    "detectable_fake": 100,
+    "source_groups_real": 100,
+    "source_groups_fake": 100,
+    "false_real": 2,
+    "false_fake": 4,
+    "false_real_source_groups": 2,
+    "false_fake_source_groups": 4,
+    "false_real_upper_95": 0.05865334546141438,
+    "false_fake_upper_95": 0.08615832010778503,
+    "real_coverage": 0.44,
+    "fake_coverage": 0.69,
+    "inconclusive": 81
+  }
+}

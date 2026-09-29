@@ -37,17 +37,24 @@ class ApiTests(unittest.TestCase):
     def setUp(self):
         self.temp = TemporaryDirectory()
         self.threshold_patch = patch.object(backend, 'THRESHOLDS_FILE', Path(self.temp.name) / 'missing.json')
+        self.photo_threshold_patch = patch.object(backend, 'PHOTO_THRESHOLDS_FILE', Path(self.temp.name) / 'missing-photo.json')
         self.production_patch = patch.object(backend, 'PRODUCTION', False)
         self.threshold_patch.start()
+        self.photo_threshold_patch.start()
         self.production_patch.start()
         backend.thresholds.cache_clear()
+        backend.photo_thresholds.cache_clear()
         self.client = TestClient(backend.app)
         self.original_detector = backend._detector
+        self.original_photo_detector = backend._photo_detector
 
     def tearDown(self):
         backend._detector = self.original_detector
+        backend._photo_detector = self.original_photo_detector
         backend.thresholds.cache_clear()
+        backend.photo_thresholds.cache_clear()
         self.production_patch.stop()
+        self.photo_threshold_patch.stop()
         self.threshold_patch.stop()
         self.temp.cleanup()
 
@@ -61,21 +68,21 @@ class ApiTests(unittest.TestCase):
         seen = []
 
         class StubDetector:
-            def analyze(self, path, is_video):
+            def analyze(self, path):
                 seen.append(Path(path))
-                assert path.is_file() and not is_video
+                assert path.is_file()
                 return {'verdict': 'inconclusive', 'fake_score': None, 'frames_sampled': 1,
                         'frames_with_faces': 0, 'multiple_faces': False, 'model': 'test'}
 
-        backend._detector = StubDetector()
+        backend._photo_detector = StubDetector()
         response = self.client.post('/api/analyze', files={'file': ('face.png', image.getvalue(), 'image/png')})
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()['verdict'], 'inconclusive')
         self.assertFalse(seen[0].exists())
 
     def test_still_image_abstains_from_video_thresholds(self):
-        backend._detector = type('StubDetector', (), {
-            'analyze': lambda _self, _path, is_video: {
+        backend._photo_detector = type('StubDetector', (), {
+            'analyze': lambda _self, _path: {
                 'fake_score': .1, 'frames_sampled': 1, 'frames_with_faces': 1,
                 'multiple_faces': False, 'model': 'test'
             }
@@ -87,13 +94,28 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(response.json()['media_type'], 'image')
 
     def test_production_refuses_uncalibrated_results(self):
-        with TemporaryDirectory() as temp, patch.object(backend, 'THRESHOLDS_FILE', Path(temp) / 'missing.json'), \
+        with TemporaryDirectory() as temp, patch.object(backend, 'PHOTO_THRESHOLDS_FILE', Path(temp) / 'missing.json'), \
              patch.object(backend, 'PRODUCTION', True):
-            backend.thresholds.cache_clear()
+            backend.photo_thresholds.cache_clear()
             self.assertFalse(self.client.get('/api/health').json()['ready'])
             response = self.client.post('/api/analyze', files={'file': ('face.png', b'png', 'image/png')})
             self.assertEqual(response.status_code, 503)
-            backend.thresholds.cache_clear()
+            backend.photo_thresholds.cache_clear()
+
+    def test_validated_photo_thresholds_enable_likely_fake(self):
+        backend._photo_detector = type('StubDetector', (), {
+            'analyze': lambda _self, _path: {
+                'fake_score': .99, 'frames_sampled': 1, 'frames_with_faces': 0,
+                'multiple_faces': False, 'model': 'photo-test'
+            }
+        })()
+        with patch.object(backend, 'PHOTO_THRESHOLDS_FILE', backend.MODELS / 'photo-thresholds.json'):
+            backend.photo_thresholds.cache_clear()
+            response = self.client.post('/api/analyze', files={'file': ('face.png', b'png', 'image/png')})
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.json()['verdict'], 'likely_manipulated')
+            self.assertTrue(response.json()['calibrated'])
+            backend.photo_thresholds.cache_clear()
 
     def test_classification_abstains_between_thresholds(self):
         self.assertEqual(backend.classify(None, .2, .8), 'inconclusive')
@@ -130,7 +152,7 @@ class ApiTests(unittest.TestCase):
                 health = self.client.get('/api/health').json()
                 self.assertFalse(health['ready'])
                 self.assertIn('could not load', health['problem'])
-                response = self.client.post('/api/analyze', files={'file': ('face.png', b'png', 'image/png')})
+                response = self.client.post('/api/analyze', files={'file': ('clip.mp4', b'video', 'video/mp4')})
                 self.assertEqual(response.status_code, 503)
                 backend.thresholds.cache_clear()
 
@@ -176,7 +198,7 @@ class ApiTests(unittest.TestCase):
                 health = self.client.get('/api/health')
                 self.assertEqual(health.status_code, 200)
                 self.assertFalse(health.json()['ready'])
-                response = self.client.post('/api/analyze', files={'file': ('face.png', b'png', 'image/png')})
+                response = self.client.post('/api/analyze', files={'file': ('clip.mp4', b'video', 'video/mp4')})
                 self.assertEqual(response.status_code, 503)
                 backend.thresholds.cache_clear()
 
