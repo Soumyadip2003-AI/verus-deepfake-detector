@@ -1,4 +1,4 @@
-"""Create a Verity validation manifest from an approved FaceForensics++ video download."""
+"""Create a Verus validation manifest from an approved FaceForensics++ video download."""
 
 from __future__ import annotations
 

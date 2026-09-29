@@ -48,7 +48,7 @@ class Member:
 
 
 def get(url: str, start: int | None = None, stop: int | None = None) -> bytes:
-    headers = {"User-Agent": "Verity-HiDF-evaluation/1.0"}
+    headers = {"User-Agent": "Verus-HiDF-evaluation/1.0"}
     if start is not None:
         headers["Range"] = f"bytes={start}-{stop}"
     for attempt in range(10):

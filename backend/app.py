@@ -219,7 +219,7 @@ class Detector:
         }
 
 
-app = FastAPI(title="Verity Deepfake Detection API", docs_url="/api/docs", redoc_url=None)
+app = FastAPI(title="Verus Deepfake Detection API", docs_url="/api/docs", redoc_url=None)
 app.mount("/assets", StaticFiles(directory=FRONTEND / "assets"), name="assets")
 _lock = threading.Lock()  # ponytail: serial inference; use a worker queue if concurrent traffic grows.
 _detector: Detector | None = None

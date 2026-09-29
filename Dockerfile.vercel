@@ -7,7 +7,7 @@ WORKDIR /app
 COPY requirements.txt .
 RUN python -m pip install --no-cache-dir --index-url https://download.pytorch.org/whl/cpu torch==2.8.0 \
     && python -m pip install --no-cache-dir -r requirements.txt \
-    && useradd --system --uid 10001 --create-home verity
+    && useradd --system --uid 10001 --create-home verus
 
 COPY backend ./backend
 COPY frontend ./frontend

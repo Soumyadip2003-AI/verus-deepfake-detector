@@ -1,4 +1,4 @@
-# Verity: Deepfake Detection
+# Verus: Deepfake Detection
 
 This project serves the existing website and analyzes a visible face in a JPG, PNG, WebP, MP4, WebM, or MOV upload. The API returns a GenD fake score for the largest detected face in an image or in up to eight sampled video frames. Files are written to a temporary location during analysis and deleted after the response.
 
