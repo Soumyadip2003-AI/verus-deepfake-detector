@@ -17,9 +17,26 @@ const localSite = ['127.0.0.1', 'localhost', ''].includes(location.hostname);
 const backendHelp = localSite
   ? 'Start the backend with ./start.command, then open http://127.0.0.1:8000.'
   : 'The detector is temporarily unavailable. Please try again later.';
+const interruptedMessage = 'The request was interrupted. Please try again.';
 let previewUrl;
 let selectedFile;
 let request;
+
+async function requestAnalysis(form, signal) {
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      const response = await fetch('/api/analyze', { method: 'POST', body: form, signal });
+      if (!response.headers.get('content-type')?.includes('application/json')) throw new Error(interruptedMessage);
+      return { response, result: await response.json() };
+    } catch (cause) {
+      if (cause.name === 'AbortError') throw cause;
+      if (attempt === 1) throw new Error(interruptedMessage);
+      status.textContent = 'Retrying';
+      note.textContent = 'The request was interrupted. Retrying once…';
+      await new Promise(resolve => setTimeout(resolve, 1500));
+    }
+  }
+}
 
 function resetResult() {
   if (request) request.abort();
@@ -93,9 +110,7 @@ runButton.addEventListener('click', async () => {
   const form = new FormData();
   form.append('file', selectedFile);
   try {
-    const response = await fetch('/api/analyze', { method: 'POST', body: form, signal: current.signal });
-    const result = response.headers.get('content-type')?.includes('application/json') ? await response.json() : null;
-    if (!result) throw new Error(backendHelp);
+    const { response, result } = await requestAnalysis(form, current.signal);
     if (!response.ok) throw new Error(typeof result.detail === 'string' ? result.detail : 'Analysis failed. Please try again.');
     const names = {
       likely_manipulated: 'LIKELY FAKE',
@@ -130,8 +145,8 @@ runButton.addEventListener('click', async () => {
       status.textContent = 'Error';
       status.dataset.state = 'error';
       verdict.textContent = 'NO RESULT';
-      note.textContent = cause instanceof TypeError ? backendHelp : cause.message || backendHelp;
-      if (cause instanceof TypeError || cause.message === backendHelp) showServiceError();
+      note.textContent = cause.message || interruptedMessage;
+      if (cause.message === interruptedMessage) checkService();
     }
   } finally {
     if (request === current) {
